@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <div class="mb-4">
+        <h2 style="color:#c9d1d9;">
+            Monitored Domains
+        </h2>
+        <p class="text-secondary mb-0">All domains under monitoring</p>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+
+            {% if domains %}
+            <div class="table-responsive">
+                <table class="table table-dark table-hover mb-0" style="--bs-table-bg: transparent;">
+
+                    <thead style="border-bottom:1px solid #30363d;">
+                        <tr>
+                            <th class="py-3 px-4">Domain</th>
+                            <th class="py-3 px-4">User</th>
+                            <th class="py-3 px-4">Email</th>
+                            <th class="py-3 px-4">Added</th>
+                            <th class="py-3 px-4">Last Scan</th>
+                            <th class="py-3 px-4">Status</th>
+                            <th class="py-3 px-4">Action</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for d in domains %}
+                        <tr style="border-bottom:1px solid #30363d;">
+
+                            <td class="py-3 px-4">
+                                <span style="color:#58a6ff;">{{ d.domain }}</span>
+                            </td>
+
+                            <td class="py-3 px-4">
+                                <span class="text-secondary">{{ d.username }}</span>
+                            </td>
+
+                            <td class="py-3 px-4">
+                                <span style="color:#c9d1d9;">{{ d.alert_email }}</span>
+                            </td>
+
+                            <td class="py-3 px-4">
+                                <small class="text-secondary">
+                                    {{ d.added_at.strftime('%Y-%m-%d %H:%M') if d.added_at else 'N/A' }}
+                                </small>
+                            </td>
+
+                            <td class="py-3 px-4">
+                                <small class="text-secondary">
+                                    {{ d.last_scanned.strftime('%Y-%m-%d %H:%M') if d.last_scanned else 'N/A' }}
+                                </small>
+                            </td>
+
+                            <td class="py-3 px-4">
+                                {% if d.status == 'active' %}
+                                    <span class="badge" style="background:#1c3d2a; color:#3fb950;">Active</span>
+                                {% else %}
+                                    <span class="badge" style="background:#3d1c1c; color:#f85149;">Stopped</span>
+                                {% endif %}
+                            </td>
+
+                            <td class="py-3 px-4">
+                                <a href="{{ url_for('admin.delete_monitor_domain', domain_id=d._id) }}"
+                                   class="btn btn-sm btn-primary">
+                                   Remove
+                                </a>
+                            </td>
+
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+
+                </table>
+            </div>
+
+            {% else %}
+            <div class="text-center py-5">
+                <p class="text-secondary">No monitored domains</p>
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}

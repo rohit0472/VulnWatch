@@ -22,6 +22,7 @@ db = get_db()
 # Collections
 users_collection = db['users']
 scans_collection = db['scans']
+monitor_collection = db['monitored_domains']
 cves_collection = db['cves']
 monitored_domains_collection = db['monitored_domains']
 alerts_collection = db['alerts']

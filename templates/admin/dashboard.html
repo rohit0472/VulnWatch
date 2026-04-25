@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <!-- Header -->
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h2 class="mb-1" style="color:#c9d1d9;">
+                <i class="fas fa-user-shield me-2" style="color:#58a6ff;"></i>
+                Admin Panel
+            </h2>
+            <p class="text-secondary mb-0">System control & management</p>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="row g-4 mb-4">
+
+        <div class="col-md-4">
+            <div class="card p-4">
+                <small class="text-secondary d-block mb-2">Total Users</small>
+                <h2 class="fw-bold" style="color:#c9d1d9;">{{ users_count }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card p-4">
+                <small class="text-secondary d-block mb-2">Total Scans</small>
+                <h2 class="fw-bold" style="color:#c9d1d9;">{{ scans_count }}</h2>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card p-4">
+                <small class="text-secondary d-block mb-2">System Status</small>
+                <h6 class="fw-semibold" style="color:#3fb950;">
+                    <i class="fas fa-circle me-1" style="font-size:0.6rem;"></i>
+                    Running
+                </h6>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Actions -->
+    <div class="row g-4">
+
+        <div class="col-md-6">
+            <div class="card h-100 p-4">
+                <h5 class="mb-2" style="color:#c9d1d9;">User Management</h5>
+                <p class="text-secondary mb-3">
+                    View and manage registered users
+                </p>
+
+                <a href="{{ url_for('admin.users') }}" class="btn btn-primary">
+                    <i class="fas fa-users me-2"></i>Manage Users
+                </a>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card h-100 p-4">
+                <h5 class="mb-2" style="color:#c9d1d9;">Scan Records</h5>
+                <p class="text-secondary mb-3">
+                    View scan activity across users
+                </p>
+
+                <a href="{{ url_for('admin.scans') }}" class="btn btn-primary">
+                    <i class="fas fa-database me-2"></i>View Scans
+                </a>
+            </div>
+        </div>
+        <div class="col-md-4">
+    <div class="card p-3">
+
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h6 style="color:#8b949e;">Monitored Domains</h6>
+
+                <h3 style="color:#c9d1d9; font-weight:600;">
+                    {{ monitor_count }}
+                </h3>
+                <span class="badge mt-1"
+                      style="background:#1c3d2a; color:#3fb950;">
+                    Active Monitoring
+                </span>
+            </div>
+            <div>
+                <a href="{{ url_for('admin.monitor_domains') }}"
+                   class="btn btn-sm"
+                   style="
+                        background:#1c2d3d;
+                        color:#58a6ff;
+                        border:1px solid #30363d;
+                   ">
+                    View
+                </a>
+            </div>
+
+        </div>
+
+    </div>
+</div>
+
+</div>
+{% endblock %}

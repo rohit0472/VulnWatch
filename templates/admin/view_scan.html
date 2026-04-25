@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <!-- Header -->
+    <div class="mb-4">
+        <h2 style="color:#c9d1d9;">
+            <i class="fas fa-search me-2" style="color:#58a6ff;"></i>
+            Scan Details
+        </h2>
+        <p class="text-secondary mb-0">Full scan breakdown</p>
+    </div>
+
+    <!-- Domain -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h4 style="color:#58a6ff; font-weight:500;">
+                {{ scan.domain }}
+            </h4>
+            <small style="color:#8b949e;">
+                Scanned at:
+                {{ scan.scanned_at.strftime('%Y-%m-%d %H:%M') if scan.scanned_at else 'N/A' }}
+            </small>
+        </div>
+    </div>
+
+    <!-- Security Headers -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 style="color:#c9d1d9;">Security Headers</h5>
+
+            <span class="badge mt-2"
+                style="
+                {% if scan.headers.header_grade == 'A' %}background:#1c3d2a; color:#3fb950;
+                {% elif scan.headers.header_grade == 'B' %}background:#1c2d3d; color:#58a6ff;
+                {% elif scan.headers.header_grade == 'C' %}background:#3d2e1c; color:#d29922;
+                {% else %}background:#3d1c1c; color:#f85149;
+                {% endif %}
+                ">
+                Grade {{ scan.headers.header_grade if scan.headers else 'N/A' }}
+            </span>
+        </div>
+    </div>
+
+    <!-- Technologies -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 style="color:#c9d1d9;">Technologies</h5>
+
+            <div class="mt-2">
+                {% for tech in scan.tech_stack.technologies %}
+                    <span class="badge me-2 mb-2"
+                          style="background:#21262d; color:#c9d1d9;">
+                        {{ tech.name }}
+                    </span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Vulnerabilities -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 style="color:#c9d1d9;">Vulnerabilities</h5>
+
+            <div class="mt-2">
+                <span style="color:#f85149; font-weight:500;">
+                    {{ scan.cves.total if scan.cves else 0 }}
+                </span>
+                <span style="color:#8b949e;">Total CVEs</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subdomains -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 style="color:#c9d1d9;">Subdomains</h5>
+
+            <div class="mt-2">
+                {% for sub in scan.subdomains.subdomains %}
+                    <div style="color:#c9d1d9;">
+                        {{ sub }}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

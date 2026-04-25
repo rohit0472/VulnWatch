@@ -1,0 +1,195 @@
+{% extends 'base.html' %}
+{% block title %}Monitor — VulnWatch{% endblock %}
+
+{% block content %}
+
+<div class="row mb-4 align-items-center">
+    <div class="col">
+        <h2 class="mb-1">
+            <i class="fas fa-eye me-2" style="color:#3fb950;"></i>
+            Domain Monitoring
+        </h2>
+        <p class="text-secondary mb-0">
+            24/7 automated scanning with email alerts on new vulnerabilities
+        </p>
+    </div>
+</div>
+
+<!-- Add Domain Form -->
+<div class="card mb-4">
+    <div class="card-header py-3">
+        <h5 class="mb-0" style="color:#c9d1d9;">
+            <i class="fas fa-plus-circle me-2" style="color:#3fb950;"></i>
+            Add Domain to Monitor
+        </h5>
+    </div>
+    <div class="card-body p-4">
+        <form method="POST" action="{{ url_for('monitor.index') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label text-secondary">Domain</label>
+                    <input type="text" name="domain" class="form-control"
+                           placeholder="example.com" required>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label text-secondary">Alert Email</label>
+                    <input type="email" name="email" class="form-control"
+                           placeholder="alerts@example.com" required>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-plus me-1"></i>Add
+                    </button>
+                </div>
+            </div>
+            <small class="text-secondary mt-2 d-block">
+                {% if current_user.role == 'admin' %}
+                    Unlimited domains. Scans run every 2 hours. You'll be alerted on new CVEs.
+                {% else %}
+                    Maximum 5 domains. Scans run every 2 hours. You'll be alerted on new CVEs.
+                {% endif %}
+            </small>
+        </form>
+    </div>
+</div>
+
+<!-- Monitored Domains -->
+{% if domains %}
+<div class="card">
+    <div class="card-header py-3">
+        <h5 class="mb-0" style="color:#c9d1d9;">
+            <i class="fas fa-list me-2" style="color:#58a6ff;"></i>
+            {% if current_user.role == 'admin' %}
+            Monitored Domains {{ domains|length }}
+            <span class="badge ms-2" style="background:#1c3d2a; color:#3fb950;">
+                Unlimited
+            </span>
+            {% else %}
+            Monitored Domains {{ domains|length }}/5
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0"
+                   style="--bs-table-bg:transparent;">
+                <thead style="border-bottom:1px solid #30363d;">
+                    <tr>
+                        <th class="py-3 px-4">Domain</th>
+                        <th class="py-3 px-4">Alert Email</th>
+                        <th class="py-3 px-4">Last Scanned</th>
+                        <th class="py-3 px-4">Status</th>
+                        <th class="py-3 px-4">Last Result</th>
+                        <th class="py-3 px-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in domains %}
+                    <tr style="border-bottom:1px solid #30363d;">
+
+                        <!-- Domain -->
+                        <td class="py-3 px-4">
+                            <code style="color:#58a6ff;">{{ d.domain }}</code>
+                        </td>
+
+                        <!-- Alert Email -->
+                        <td class="py-3 px-4">
+                            <small class="text-secondary">{{ d.alert_email }}</small>
+                        </td>
+
+                        <!-- Last Scanned -->
+                        <td class="py-3 px-4">
+                            <small class="text-secondary">
+                                {% if d.last_scanned %}
+                                    {{ d.last_scanned_ist.strftime('%Y-%m-%d %H:%M IST') }}
+                                {% else %}
+                                    Pending first scan
+                                {% endif %}
+                            </small>
+                        </td>
+
+                        <!-- Status -->
+                        <td class="py-3 px-4">
+                            {% if d.status == 'ok' %}
+                            <span class="badge" style="background:#1c3d2a; color:#3fb950;">Active</span>
+                            {% elif d.status == 'error' %}
+                            <span class="badge" style="background:#3d1c1c; color:#f85149;">Error</span>
+                            {% else %}
+                            <span class="badge" style="background:#21262d; color:#8b949e;">Pending</span>
+                            {% endif %}
+                        </td>
+
+                        <!-- Last Result — risk score + CVEs + exploit badge -->
+                        <td class="py-3 px-4">
+                            {% if d.last_scan_result %}
+                            <small>
+                                <span style="color:#58a6ff;">
+                                    Score: {{ d.last_scan_result.get('risk_score', 'N/A') }}
+                                </span>
+
+                                {% if d.last_scan_result.get('verified_cves', 0) > 0 %}
+                                <span class="badge ms-1"
+                                      style="background:#3d1c1c; color:#f85149;">
+                                    {{ d.last_scan_result.verified_cves }} CVEs
+                                </span>
+                                {% endif %}
+
+                                {# Exploit badge — only shown when exploits were found #}
+                                {% if d.last_scan_result.get('exploit_count', 0) > 0 %}
+                                <span class="badge ms-1"
+                                      style="background:#3d1c1c; color:#f85149;">
+                                    <i class="fas fa-fire me-1"></i>
+                                    {{ d.last_scan_result.exploit_count }} Exploit{{ 's' if d.last_scan_result.exploit_count > 1 else '' }}
+                                </span>
+                                {% endif %}
+                            </small>
+                            {% else %}
+                            <small class="text-secondary">—</small>
+                            {% endif %}
+                        </td>
+
+                        <!-- Actions -->
+                        <td class="py-3 px-4">
+                            <form method="POST"
+                                  action="{{ url_for('monitor.scan_now', domain_id=d['_id']) }}"
+                                  style="display:inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit"
+                                        class="btn btn-sm btn-outline-secondary me-1"
+                                        title="Scan Now">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </form>
+                            <form method="POST"
+                                  action="{{ url_for('monitor.remove', domain_id=d['_id']) }}"
+                                  style="display:inline;"
+                                  onsubmit="return confirm('Remove {{ d.domain }} from monitoring?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit"
+                                        class="btn btn-sm btn-outline-danger"
+                                        title="Remove">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="fas fa-eye-slash fa-3x text-secondary mb-3"></i>
+        <p class="text-secondary">No domains being monitored yet.</p>
+        <p class="text-secondary">Add a domain above to start 24/7 monitoring.</p>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

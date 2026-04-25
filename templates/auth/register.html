@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block title %}Register — VulnWatch{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header text-center py-4 border-bottom-0">
+                <h3 class="mb-1">
+                    <i class="fas fa-shield-alt me-2" style="color: #3fb950;"></i>
+                    <span style="color: #58a6ff;">VulnWatch</span>
+                </h3>
+                <small class="text-secondary">Create your account</small>
+            </div>
+            
+            <div class="card-body p-4">
+                <form method="POST" action="{{ url_for('auth.register') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="mb-3">
+                        <label class="form-label text-light">Username</label>
+                        <input type="text" name="username" class="form-control"
+                               placeholder="yourname" value="{{ username or '' }}" required>
+                        <small class="text-secondary">3-30 characters, letters/numbers/underscores only</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-light">Email address</label>
+                        <input type="email" name="email" class="form-control"
+                               placeholder="you@example.com" value="{{ email or '' }}" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-light">Password</label>
+                        <input type="password" name="password" class="form-control"
+                               placeholder="••••••••" required>
+                        <small class="text-secondary">
+                            Min 8 chars, uppercase, lowercase, number, special character
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-light">Confirm Password</label>
+                        <input type="password" name="confirm_password" class="form-control"
+                               placeholder="••••••••" required>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary py-2">
+                            <i class="fas fa-user-plus me-2"></i>Create Account
+                        </button>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="card-footer text-center py-3 bg-transparent border-top-0">
+                <small class="text-secondary">
+                    Already have an account? 
+                    <a href="{{ url_for('auth.login') }}" class="text-decoration-none" style="color: #58a6ff;">
+                        Sign in here
+                    </a>
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

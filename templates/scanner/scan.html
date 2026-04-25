@@ -1,0 +1,683 @@
+{% extends 'base.html' %}
+{% block title %}Scanner — VulnWatch{% endblock %}
+
+{% block extra_css %}
+<style>
+    .scan-spinner {
+        width: 64px; height: 64px;
+        border: 4px solid #21262d;
+        border-top-color: #58a6ff;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .step-pill {
+        display: inline-block;
+        padding: 4px 14px;
+        border-radius: 999px;
+        border: 1px solid #30363d;
+        background: #161b22;
+        color: #8b949e;
+        font-size: 0.82rem;
+        transition: color 0.3s, border-color 0.3s;
+    }
+    .step-pill.active {
+        color: #58a6ff;
+        border-color: #58a6ff;
+    }
+
+    #scanProgressBar {
+        height: 3px;
+        background: #21262d;
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    #scanProgressFill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #58a6ff, #3fb950);
+        border-radius: 2px;
+        transition: width 0.8s ease;
+    }
+
+    #resultsSection {
+        animation: fadeUp 0.4s ease both;
+    }
+    @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="row mb-4">
+    <div class="col">
+        <h2 class="mb-1">
+            <i class="fas fa-search me-2" style="color:#58a6ff;"></i>Domain Scanner
+        </h2>
+        <p class="text-secondary mb-0">Scan any domain for vulnerabilities and tech stack exposure</p>
+    </div>
+</div>
+
+<!-- Scan Form — no method/action so browser never navigates away -->
+<div class="card mb-4">
+    <div class="card-body p-4">
+        <form id="scanForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="input-group">
+                <span class="input-group-text"
+                      style="background:#0d1117; border-color:#30363d; color:#8b949e;">
+                    <i class="fas fa-globe"></i>
+                </span>
+                <input type="text" name="domain" id="domainInput" class="form-control"
+                       placeholder="Enter domain (e.g. example.com)"
+                       value="{{ result.input_domain if result else prefill_domain }}"
+                       required>
+                {# data-action carries the POST URL so JS doesn't hardcode it #}
+                <button type="submit" id="scanBtn" class="btn btn-primary px-4"
+                        data-action="{{ url_for('scanner.scan') }}">
+                    <i class="fas fa-search me-2"></i>Scan
+                </button>
+            </div>
+            <small class="text-secondary mt-2 d-block">
+                Enter domain without http:// — e.g. github.com, wordpress.org
+            </small>
+        </form>
+    </div>
+</div>
+
+<!-- ── Loader — lives on the same page, shown by JS ──────────────────── -->
+<div id="loaderSection" style="display:none;">
+    <div class="card mb-4">
+        <div class="card-body py-5 text-center">
+            <div class="scan-spinner mx-auto mb-4"></div>
+            <h5 id="loaderHeading" style="color:#c9d1d9;" class="mb-1">
+                Initialising scan…
+            </h5>
+            <small class="text-secondary d-block mb-4">
+                This takes 20–40 seconds — please don't close this tab.
+            </small>
+            <div id="scanProgressBar" class="mx-auto mb-4" style="max-width:380px;">
+                <div id="scanProgressFill"></div>
+            </div>
+            <div class="d-flex flex-wrap justify-content-center gap-2">
+                <span class="step-pill" data-step="0">Headers</span>
+                <span class="step-pill" data-step="1">Tech stack</span>
+                <span class="step-pill" data-step="2">Subdomains</span>
+                <span class="step-pill" data-step="3">CVEs</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Results — swapped in by JS after fetch() resolves ─────────────── -->
+<div id="resultsSection">
+
+{% if result %}
+    {% if result.get('error') %}
+    <div class="alert alert-danger">
+        <i class="fas fa-exclamation-triangle me-2"></i>{{ result.error }}
+    </div>
+    {% else %}
+
+    <!-- Summary cards -->
+    <div class="row g-3 mb-4">
+
+        <div class="col">
+            <div class="card text-center p-3">
+                {% if result.risk_score %}
+                <i class="{{ result.risk_score.icon }} fa-2x mb-2"
+                   style="color:{{ result.risk_score.color }};"></i>
+                <h4 style="color:{{ result.risk_score.color }};">
+                    {{ result.risk_score.score }}/100
+                </h4>
+                <small style="color:{{ result.risk_score.color }};">
+                    {{ result.risk_score.label }}
+                </small>
+                {% else %}
+                <i class="fas fa-shield-alt fa-2x mb-2" style="color:#8b949e;"></i>
+                <h4 style="color:#8b949e;">N/A</h4>
+                <small class="text-secondary">Risk Score</small>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col">
+            {% set hg = result.headers.header_grade %}
+            {% set hcolor = '#3fb950' if hg=='A' else '#58a6ff' if hg=='B' else '#d29922' if hg=='C' else '#f85149' %}
+            <div class="card text-center p-3">
+                <i class="fas fa-lock fa-2x mb-2" style="color:{{ hcolor }};"></i>
+                <h4 style="color:{{ hcolor }};">{{ hg }}</h4>
+                <small class="text-secondary">Header Grade</small>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="card text-center p-3">
+                <i class="fas fa-bug fa-2x mb-2" style="color:#f85149;"></i>
+                <h4 style="color:#f85149;">
+                    {{ result.cves.high_confidence if result.cves else 0 }}
+                </h4>
+                <small class="text-secondary">Verified CVEs</small>
+                {% if result.cves and (result.cves.low_confidence + result.cves.medium_confidence) > 0 %}
+                <small class="text-secondary d-block" style="font-size:0.75rem;">
+                    + {{ result.cves.low_confidence + result.cves.medium_confidence }} possible
+                </small>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="card text-center p-3">
+                <i class="fas fa-layer-group fa-2x mb-2" style="color:#58a6ff;"></i>
+                <h4 style="color:#58a6ff;">
+                    {{ result.tech_stack.technologies|length if result.tech_stack else 0 }}
+                </h4>
+                <small class="text-secondary">Technologies</small>
+            </div>
+        </div>
+
+        <div class="col">
+            {% set sub_failed = result.subdomains.scan_failed if result.subdomains else true %}
+            <div class="card text-center p-3">
+                <i class="fas fa-sitemap fa-2x mb-2"
+                   style="color:{% if sub_failed %}#d29922{% else %}#3fb950{% endif %};"></i>
+                {% if sub_failed %}
+                <h4 style="color:#d29922;">N/A</h4>
+                <small style="color:#d29922;">Unavailable</small>
+                {% else %}
+                <h4 style="color:#3fb950;">{{ result.subdomains.total_found }}</h4>
+                <small class="text-secondary">Subdomains</small>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="card text-center p-3">
+            {% set exploit_count = namespace(n=0) %}
+            {% if result.cves and result.cves.cves %}
+            {% for c in result.cves.cves %}
+                {% if c.exploit_available %}
+                    {% set exploit_count.n = exploit_count.n + 1 %}
+                {% endif %}
+            {% endfor %}
+            {% endif %}
+            <i class="fas fa-fire fa-2x mb-2"
+            style="color:{% if exploit_count.n > 0 %}#f85149{% else %}#8b949e{% endif %};"></i>
+            <h4 style="color:{% if exploit_count.n > 0 %}#f85149{% else %}#8b949e{% endif %};">
+            {{ exploit_count.n }}
+            </h4>
+            <small class="text-secondary">Exploits Available</small>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Attack Surface Summary -->
+    {% set sensitive_keywords = ['admin','api','dev','staging','test','vpn','mail',
+                                 'webmail','cpanel','login','secure','portal',
+                                 'remote','autodiscover','erp'] %}
+    {% set ns = namespace(sensitive_count=0) %}
+    {% if result.subdomains and result.subdomains.subdomains %}
+        {% for sub in result.subdomains.subdomains %}
+            {% set prefix = sub.split('.')[0] %}
+            {% set is_s = namespace(v=false) %}
+            {% for kw in sensitive_keywords %}{% if kw in prefix %}{% set is_s.v = true %}{% endif %}{% endfor %}
+            {% if is_s.v %}{% set ns.sensitive_count = ns.sensitive_count + 1 %}{% endif %}
+        {% endfor %}
+    {% endif %}
+
+    {% if scan_id %}
+    <div class="d-flex justify-content-end mb-3">
+        <a href="{{ url_for('scanner.download_report', scan_id=scan_id) }}"
+           class="btn btn-success">
+            <i class="fas fa-file-pdf me-2"></i>Download PDF Report
+        </a>
+    </div>
+    {% endif %}
+
+    <div class="card mb-4" style="border-color:#d29922;">
+        <div class="card-header py-3" style="border-bottom-color:#d29922;">
+            <h5 class="mb-0" style="color:#d29922;">
+                <i class="fas fa-binoculars me-2"></i>Attack Surface Summary
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3 text-center">
+                    <div class="p-2">
+                        <h5 style="color:#f85149;">
+                            {% if result.subdomains and result.subdomains.scan_failed %}
+                            <span style="color:#d29922;">N/A</span>
+                            {% else %}
+                            {{ result.subdomains.total_found if result.subdomains else 0 }}
+                            {% endif %}
+                        </h5>
+                        <small class="text-secondary">Subdomains Exposed</small>
+                    </div>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="p-2">
+                        <h5 style="color:#d29922;">{{ ns.sensitive_count }}</h5>
+                        <small class="text-secondary">Sensitive Subdomains</small>
+                    </div>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="p-2">
+                        <h5 style="color:{% if result.cves and result.cves.high_confidence > 0 %}#f85149{% else %}#3fb950{% endif %};">
+                            {{ result.cves.high_confidence if result.cves else 0 }}
+                        </h5>
+                        <small class="text-secondary">Verified Vulnerabilities</small>
+                    </div>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="p-2">
+                        {% set mc = result.headers.missing_headers|length %}
+                        <h5 style="color:{% if mc > 2 %}#f85149{% elif mc > 0 %}#d29922{% else %}#3fb950{% endif %};">
+                            {{ mc }}
+                        </h5>
+                        <small class="text-secondary">Missing Security Headers</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Security Headers -->
+    <div class="card mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0" style="color:#c9d1d9;">
+                <i class="fas fa-lock me-2" style="color:#58a6ff;"></i>Security Headers
+            </h5>
+            {% set hg = result.headers.header_grade %}
+            {% set hbg    = '#1c3d2a' if hg=='A' else '#1c2d3d' if hg=='B' else '#3d2e1c' if hg=='C' else '#3d1c1c' %}
+            {% set hcolor = '#3fb950' if hg=='A' else '#58a6ff' if hg=='B' else '#d29922' if hg=='C' else '#f85149' %}
+            <span class="badge fs-6 px-3 py-2"
+                  style="background:{{ hbg }}; color:{{ hcolor }};">
+                Grade {{ hg }} — {{ result.headers.header_score }}%
+            </span>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <small class="text-secondary">HTTPS</small>
+                    <p class="mb-0">
+                        {% if result.headers.https %}
+                        <i class="fas fa-check-circle" style="color:#3fb950;"></i>
+                        <span style="color:#3fb950;"> Enabled</span>
+                        {% else %}
+                        <i class="fas fa-times-circle" style="color:#f85149;"></i>
+                        <span style="color:#f85149;"> Not enabled</span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <small class="text-secondary">HTTPS Redirect</small>
+                    <p class="mb-0">
+                        {% if result.headers.https_redirect %}
+                        <i class="fas fa-check-circle" style="color:#3fb950;"></i>
+                        <span style="color:#3fb950;"> Yes</span>
+                        {% else %}
+                        <i class="fas fa-times-circle" style="color:#f85149;"></i>
+                        <span style="color:#f85149;"> No</span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <small class="text-secondary">SSL Issue</small>
+                    <p class="mb-0">
+                        {% if result.headers.ssl_issue %}
+                        <i class="fas fa-exclamation-triangle" style="color:#d29922;"></i>
+                        <span style="color:#d29922;"> Detected</span>
+                        {% else %}
+                        <i class="fas fa-check-circle" style="color:#3fb950;"></i>
+                        <span style="color:#3fb950;"> None</span>
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+
+            {% if result.headers.security_headers %}
+            <h6 class="text-secondary mb-2">Present Headers</h6>
+            {% for header, value in result.headers.security_headers.items() %}
+            <div class="d-flex align-items-center mb-1">
+                <i class="fas fa-check-circle me-2" style="color:#3fb950;"></i>
+                <code style="color:#c9d1d9;">{{ header }}</code>
+            </div>
+            {% endfor %}
+            {% endif %}
+
+            {% if result.headers.missing_headers %}
+            <h6 class="text-secondary mt-3 mb-2">Missing Headers</h6>
+            {% for header in result.headers.missing_headers %}
+            <div class="d-flex align-items-start mb-2">
+                <i class="fas fa-times-circle me-2 mt-1" style="color:#f85149;"></i>
+                <div>
+                    <code style="color:#c9d1d9;">{{ header }}</code><br>
+                    <small class="text-secondary">
+                        {% if header == 'Content-Security-Policy' %}No CSP → Increased XSS risk
+                        {% elif header == 'Strict-Transport-Security' %}No HSTS → HTTPS downgrade attack possible
+                        {% elif header == 'X-Frame-Options' %}No X-Frame-Options → Clickjacking risk
+                        {% elif header == 'X-Content-Type-Options' %}No X-Content-Type-Options → MIME sniffing possible
+                        {% elif header == 'Referrer-Policy' %}No Referrer-Policy → Sensitive URLs leaked to third parties
+                        {% elif header == 'Permissions-Policy' %}No Permissions-Policy → Browser features uncontrolled
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Tech Stack -->
+    {% if result.tech_stack and result.tech_stack.technologies %}
+    {% set high_risk_techs   = ['WordPress','Joomla','Drupal','PHP','jQuery'] %}
+    {% set medium_risk_techs = ['Apache','Nginx','MySQL','MongoDB','Laravel'] %}
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <h5 class="mb-0" style="color:#c9d1d9;">
+                <i class="fas fa-layer-group me-2" style="color:#58a6ff;"></i>Tech Stack
+                <span class="badge bg-secondary ms-2">{{ result.tech_stack.technologies|length }}</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-2">
+                {% for tech in result.tech_stack.technologies %}
+                <div class="col-md-4">
+                    <div class="d-flex align-items-center p-2 rounded"
+                         style="background:#0d1117; border:1px solid #30363d;">
+                        <i class="fas fa-cube me-2" style="color:#58a6ff;"></i>
+                        <div>
+                            <span style="color:#c9d1d9;">{{ tech.name }}</span>
+                            {% if tech.version %}
+                            <span class="badge ms-1" style="background:#1c2d3d; color:#58a6ff;">
+                                {{ tech.version }}
+                            </span>
+                            {% endif %}
+                            {% if tech.name in high_risk_techs %}
+                            <span class="badge ms-1" style="background:#3d1c1c; color:#f85149;">
+                                Common attack target
+                            </span>
+                            {% elif tech.name in medium_risk_techs %}
+                            <span class="badge ms-1" style="background:#3d2e1c; color:#d29922;">
+                                Monitor
+                            </span>
+                            {% endif %}
+                            <br>
+                            <small class="text-secondary">{{ tech.category }}</small>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- CVEs -->
+    {% if result.cves is not none %}
+    <div class="card mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0" style="color:#c9d1d9;">
+                <i class="fas fa-bug me-2" style="color:#f85149;"></i>Vulnerabilities
+            </h5>
+            <div>
+                <span class="badge me-1" style="background:#1c3d2a; color:#3fb950;">
+                    {{ result.cves.high_confidence }} Verified
+                </span>
+                <span class="badge" style="background:#3d2e1c; color:#d29922;">
+                    {{ result.cves.medium_confidence + result.cves.low_confidence }} Possible
+                </span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="alert mb-4"
+                 style="background:#1c2d1c; border-color:#3fb950; color:#8b949e;">
+                <i class="fas fa-info-circle me-2" style="color:#3fb950;"></i>
+                <strong style="color:#c9d1d9;">Verified</strong> CVEs matched via CPE — version accurate.
+                <strong style="color:#c9d1d9;">Possible</strong> CVEs are keyword-based and may include false positives.
+            </div>
+
+            {% set verified = result.cves.cves | selectattr('confidence','equalto','high') | list %}
+            {% if verified %}
+            <h6 class="mb-3" style="color:#3fb950;">
+                <i class="fas fa-check-circle me-2"></i>Verified CVEs ({{ verified|length }})
+            </h6>
+            <div class="table-responsive mb-4">
+                <table class="table table-dark table-hover mb-0"
+                       style="--bs-table-bg:transparent;">
+                    <thead style="border-bottom:1px solid #30363d;">
+                        <tr>
+                            <th class="py-3 px-4">CVE ID</th>
+                            <th class="py-3 px-4">Technology</th>
+                            <th class="py-3 px-4">Description</th>
+                            <th class="py-3 px-4">Score</th>
+                            <th class="py-3 px-4">Severity</th>
+                            <th class="py-3 px-4">KEV</th>
+                            <th class="py-3 px-4">Exploit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cve in verified %}
+                        <tr style="border-bottom:1px solid #30363d;">
+                            <td class="py-3 px-4">
+                                <a href="{{ cve.url }}" target="_blank"
+                                   style="color:#58a6ff; font-family:monospace; text-decoration:none;">
+                                    {{ cve.id }}
+                                </a>
+                            </td>
+                            <td class="py-3 px-4">
+                                <span style="color:#c9d1d9;">{{ cve.technology }}</span>
+                                {% if cve.version %}
+                                <span class="badge ms-1" style="background:#1c2d3d; color:#58a6ff;">
+                                    {{ cve.version }}
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="py-3 px-4">
+                                <small class="text-secondary">{{ cve.description }}</small>
+                            </td>
+                            <td class="py-3 px-4">
+                                {% if cve.score %}
+                                <span class="fw-bold"
+                                      style="color:{% if cve.score >= 9 %}#f85149{% elif cve.score >= 7 %}#d29922{% elif cve.score >= 4 %}#58a6ff{% else %}#3fb950{% endif %};">
+                                    {{ cve.score }}
+                                </span>
+                                {% else %}
+                                <span class="text-secondary">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-3 px-4">
+                                {% set sev = cve.severity %}
+                                {% set sbg = '#3d1c1c' if sev=='CRITICAL' else '#3d2e1c' if sev=='HIGH' else '#1c2d3d' if sev=='MEDIUM' else '#1c3d2a' if sev=='LOW' else '#21262d' %}
+                                {% set sc  = '#f85149' if sev=='CRITICAL' else '#d29922' if sev=='HIGH' else '#58a6ff' if sev=='MEDIUM' else '#3fb950' if sev=='LOW' else '#8b949e' %}
+                                <span class="badge" style="background:{{ sbg }}; color:{{ sc }};">
+                                    {{ sev }}
+                                </span>
+                            </td>
+                            <td class="py-3 px-4">
+                                {% if cve.kev %}
+                                <span class="badge" style="background:#3d1c1c; color:#f85149;">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>KEV
+                                </span>
+                                {% else %}
+                                <span class="text-secondary">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-3 px-4">
+                        {% if cve.exploit_available %}
+                        {% for exploit in cve.exploit_urls %}
+                            <a href="{{ exploit.url }}" target="_blank"
+                            class="badge text-decoration-none d-inline-block mb-1"
+                            style="background:#3d1c1c; color:#f85149;"
+                            title="{{ exploit.title }}">
+                            <i class="fas fa-fire me-1"></i>Exploit
+                        </a>
+                        {% endfor %}
+                        {% else %}
+                        <span class="text-secondary">—</span>
+                        {% endif %}
+                        </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="mb-4 p-3 rounded"
+                 style="background:#0d1117; border:1px solid #30363d;">
+                <i class="fas fa-check-circle me-2" style="color:#3fb950;"></i>
+                <span class="text-secondary">
+                    No verified CVEs found for detected technology versions.
+                </span>
+            </div>
+            {% endif %}
+
+            {% set possible = result.cves.cves | selectattr('confidence','in',['medium','low']) | list %}
+            {% if possible %}
+            <button class="btn btn-sm btn-outline-secondary mb-3"
+                    type="button" data-bs-toggle="collapse"
+                    data-bs-target="#possibleCves">
+                <i class="fas fa-exclamation-triangle me-2" style="color:#d29922;"></i>
+                Show Possible CVEs
+                {% if possible|length > 50 %}(showing top 50 of {{ possible|length }})
+                {% else %}({{ possible|length }}){% endif %}
+                — may include false positives
+            </button>
+            <div class="collapse" id="possibleCves">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0"
+                           style="--bs-table-bg:transparent; opacity:0.8;">
+                        <thead style="border-bottom:1px solid #30363d;">
+                            <tr>
+                                <th class="py-3 px-4">CVE ID</th>
+                                <th class="py-3 px-4">Technology</th>
+                                <th class="py-3 px-4">Description</th>
+                                <th class="py-3 px-4">Score</th>
+                                <th class="py-3 px-4">Severity</th>
+                                <th class="py-3 px-4">Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for cve in possible[:50] %}
+                            <tr style="border-bottom:1px solid #30363d;">
+                                <td class="py-3 px-4">
+                                    <a href="{{ cve.url }}" target="_blank"
+                                       style="color:#8b949e; font-family:monospace; text-decoration:none;">
+                                        {{ cve.id }}
+                                    </a>
+                                </td>
+                                <td class="py-3 px-4">
+                                    <span class="text-secondary">{{ cve.technology }}</span>
+                                </td>
+                                <td class="py-3 px-4">
+                                    <small class="text-secondary">{{ cve.description }}</small>
+                                </td>
+                                <td class="py-3 px-4">
+                                    {% if cve.score %}
+                                    <span style="color:#8b949e;">{{ cve.score }}</span>
+                                    {% else %}
+                                    <span class="text-secondary">N/A</span>
+                                    {% endif %}
+                                </td>
+                                <td class="py-3 px-4">
+                                    <span class="badge" style="background:#21262d; color:#8b949e;">
+                                        {{ cve.severity }}
+                                    </span>
+                                </td>
+                                <td class="py-3 px-4">
+                                    <span class="badge" style="background:#21262d; color:#8b949e;">
+                                        {{ cve.confidence }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Subdomains -->
+    {% if result.subdomains %}
+    <div class="card mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0" style="color:#c9d1d9;">
+                <i class="fas fa-sitemap me-2" style="color:#3fb950;"></i>
+                Subdomains
+                <span class="badge bg-secondary ms-2">
+                    {{ result.subdomains.total_found }}
+                </span>
+            </h5>
+            {% if result.subdomains.limited %}
+            <small class="text-warning">
+                <i class="fas fa-exclamation-triangle me-1"></i>
+                {{ result.subdomains.limit_message }}
+            </small>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if result.subdomains.scan_failed %}
+            <div class="p-3 rounded text-center"
+                 style="background:#0d1117; border:1px solid #30363d;">
+                <i class="fas fa-exclamation-triangle mb-2"
+                   style="color:#d29922; font-size:1.5rem;"></i>
+                <p class="text-secondary mb-0">
+                    Subdomain data unavailable — all lookup sources failed or were
+                    rate-limited. Try rescanning in a few minutes.
+                </p>
+            </div>
+            {% elif result.subdomains.subdomains %}
+            <div class="row g-2">
+                {% for sub in result.subdomains.subdomains %}
+                {% set prefix = sub.split('.')[0] %}
+                {% set is_sensitive = namespace(v=false) %}
+                {% for kw in sensitive_keywords %}
+                    {% if kw in prefix %}{% set is_sensitive.v = true %}{% endif %}
+                {% endfor %}
+                <div class="col-md-4">
+                    <div class="p-2 rounded"
+                         style="background:#0d1117; border:1px solid {% if is_sensitive.v %}#d29922{% else %}#30363d{% endif %};">
+                        <code style="color:{% if is_sensitive.v %}#d29922{% else %}#3fb950{% endif %}; font-size:0.85rem;">
+                            {{ sub }}
+                        </code>
+                        {% if is_sensitive.v %}
+                        <i class="fas fa-exclamation-triangle ms-1"
+                           style="color:#d29922; font-size:0.75rem;"></i>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-secondary mb-0">No subdomains found.</p>
+            {% endif %}
+
+            {% if result.subdomains.sources_used %}
+            <small class="text-secondary d-block mt-3">
+                <i class="fas fa-database me-1"></i>
+                Sources: {{ result.subdomains.sources_used | join(', ') }}
+            </small>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% endif %}{# end result.error else #}
+{% endif %}{# end if result #}
+
+</div>{# end #resultsSection #}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/scanner.js') }}"></script>
+{% endblock %}

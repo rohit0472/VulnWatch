@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% block title %}Scan History — VulnWatch{% endblock %}
+
+{% block content %}
+
+<div class="row mb-4 align-items-center">
+    <div class="col">
+        <h2 class="mb-1">
+            <i class="fas fa-history me-2" style="color:#58a6ff;"></i>
+            Scan History
+        </h2>
+        <p class="text-secondary mb-0">Your last 20 domain scans</p>
+    </div>
+    <div class="col-auto">
+        <a href="{{ url_for('scanner.scan') }}" class="btn btn-primary">
+            <i class="fas fa-search me-2"></i>New Scan
+        </a>
+    </div>
+</div>
+
+{% if scans %}
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0"
+                   style="--bs-table-bg:transparent;">
+                <thead style="border-bottom:1px solid #30363d;">
+                    <tr>
+                        <th class="py-3 px-4">Domain</th>
+                        <th class="py-3 px-4">Grade</th>
+                        <th class="py-3 px-4">CVEs</th>
+                        <th class="py-3 px-4">Technologies</th>
+                        <th class="py-3 px-4">Scanned At</th>
+                        <th class="py-3 px-4">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for scan in scans %}
+                    <tr style="border-bottom:1px solid #30363d;">
+
+                        <!-- Domain -->
+                        <td class="py-3 px-4">
+                            <code style="color:#58a6ff;">{{ scan.domain }}</code>
+                        </td>
+
+                        <!-- Header Grade -->
+                        <td class="py-3 px-4">
+                            <span class="badge fs-6 px-2"
+                                style="background:{% if scan.grade == 'A' %}#1c3d2a; color:#3fb950{% elif scan.grade == 'B' %}#1c2d3d; color:#58a6ff{% elif scan.grade == 'C' %}#3d2e1c; color:#d29922{% else %}#3d1c1c; color:#f85149{% endif %};">
+                                {{ scan.grade }}
+                            </span>
+                        </td>
+
+                        <!-- CVEs — verified + possible + exploit badge stacked -->
+                        <td class="py-3 px-4">
+                            {% if scan.cve_verified > 0 %}
+                            <span class="badge me-1"
+                                  style="background:#1c3d2a; color:#3fb950;">
+                                {{ scan.cve_verified }} Verified
+                            </span>
+                            {% endif %}
+
+                            {% if scan.cve_possible > 0 %}
+                            <span class="badge"
+                                  style="background:#21262d; color:#8b949e;">
+                                {{ scan.cve_possible }} Possible
+                            </span>
+                            {% endif %}
+
+                            {% if scan.cve_total == 0 %}
+                            <span class="text-secondary">None found</span>
+                            {% endif %}
+
+                            {# Exploit badge — shown on new line if exploits exist #}
+                            {% if scan.exploit_count and scan.exploit_count > 0 %}
+                            <br>
+                            <span class="badge mt-1"
+                                  style="background:#3d1c1c; color:#f85149;">
+                                <i class="fas fa-fire me-1"></i>
+                                {{ scan.exploit_count }} Exploit{{ 's' if scan.exploit_count > 1 else '' }}
+                            </span>
+                            {% endif %}
+                        </td>
+
+                        <!-- Tech count -->
+                        <td class="py-3 px-4">
+                            <span style="color:#c9d1d9;">{{ scan.tech_count }}</span>
+                        </td>
+
+                        <!-- Scanned At -->
+                        <td class="py-3 px-4">
+                            <small class="text-secondary">
+                                {{ scan.scanned_at.strftime('%Y-%m-%d %H:%M') if scan.scanned_at else 'N/A' }}
+                            </small>
+                        </td>
+
+                        <!-- Actions -->
+                        <td class="py-3 px-4">
+                            <a href="{{ url_for('scanner.scan') }}?domain={{ scan.domain }}"
+                               class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-redo me-1"></i>Rescan
+                            </a>
+                            <a href="{{ url_for('scanner.download_report', scan_id=scan['_id']) }}"
+                               class="btn btn-sm btn-success ms-1">
+                                <i class="fas fa-file-pdf"></i>
+                            </a>
+                        </td>
+
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="fas fa-search fa-3x text-secondary mb-3"></i>
+        <p class="text-secondary">No scans yet. Start by scanning a domain!</p>
+        <a href="{{ url_for('scanner.scan') }}" class="btn btn-primary">
+            <i class="fas fa-search me-2"></i>Scan a Domain
+        </a>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

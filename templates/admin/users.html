@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <!-- Header -->
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h2 class="mb-1" style="color:#c9d1d9;">
+                <i class="fas fa-users me-2" style="color:#58a6ff;"></i>
+                User Management
+            </h2>
+            <p class="text-secondary mb-0">Manage all registered users</p>
+        </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="card">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0" style="color:#c9d1d9;">
+                <i class="fas fa-database me-2" style="color:#58a6ff;"></i>
+                Users
+            </h5>
+            <small class="text-secondary">{{ users|length }} total</small>
+        </div>
+
+        <div class="card-body p-0">
+            {% if users %}
+            <div class="table-responsive">
+                <table class="table table-dark table-hover mb-0" style="--bs-table-bg: transparent;">
+                    <thead style="border-bottom: 1px solid #30363d;">
+                        <tr>
+                            <th class="py-3 px-4">Username</th>
+                            <th class="py-3 px-4">Email</th>
+                            <th class="py-3 px-4">Role</th>
+                            <th class="py-3 px-4">Status</th>
+                            <th class="py-3 px-4 text-end">Action</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for user in users %}
+                        <tr style="border-bottom: 1px solid #30363d;">
+
+                            <!-- Username -->
+                            <td class="py-3 px-4">
+                                <span style="color:#58a6ff; font-weight:500;">
+                                    {{ user.username }}
+                                </span>
+                            </td>
+
+                            <!-- Email -->
+                            <td class="py-3 px-4">
+                                <small class="text-secondary">{{ user.email }}</small>
+                            </td>
+
+                            <!-- Role -->
+                            <td class="py-3 px-4">
+                                <span class="badge"
+                                    style="background:#1c2d3d; color:#58a6ff;">
+                                    {{ user.role }}
+                                </span>
+                            </td>
+
+                            <!-- Status -->
+                            <td class="py-3 px-4">
+                                {% if user.is_active %}
+                                    <span class="badge" style="background:#1c3d2a; color:#3fb950;">
+                                        Active
+                                    </span>
+                                {% else %}
+                                    <span class="badge" style="background:#3d1c1c; color:#f85149;">
+                                        Disabled
+                                    </span>
+                                {% endif %}
+                            </td>
+
+                            <!-- Action -->
+                            <td class="py-3 px-4 text-end">
+
+                            {% if user.role != 'admin' and user._id != current_user.id %}
+                            <form method="POST" action="{{ url_for('admin.delete_user', user_id=user._id) }}">
+
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                                <button type="submit" class="btn btn-sm btn-primary">
+                                    <i class="fas fa-trash me-1"></i>Delete
+                                </button>
+                            </form>
+                            {% else %}
+                            <span class="text-secondary">—</span>
+                            {% endif %}
+
+</td>
+
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% else %}
+            <!-- Empty State -->
+            <div class="text-center py-5">
+                <i class="fas fa-user-slash fa-2x text-secondary mb-3"></i>
+                <p class="text-secondary">No users found</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}
