@@ -219,9 +219,7 @@ def calculate_risk_score(headers_result, cves_result=None, tech_stack=None, subd
         if cves_result.get('high_confidence', 0) > 0:
             ded += min(cves_result['high_confidence'] * 3, 10)
  
-        # ── Exploit deduction (NEW) ───────────────────────────────────────
-        # Each CVE with a public exploit is more dangerous — deduct extra points.
-        # Capped at 6 so a single exploitable CVE doesn't dominate the score.
+       
         exploitable = sum(
             1 for c in (cves_result.get('cves') or [])
             if c.get('exploit_available')
@@ -354,7 +352,7 @@ def scan_tech_stack(domain, html_content=None, headers=None):
         except Exception:
             logger.warning("Wappalyzer failed", exc_info=True)
 
-        # builtwith — makes its own request; remove block to save one round-trip
+        
         try:
             import builtwith
             for category, techs in builtwith.parse('https://' + domain).items():
@@ -651,10 +649,10 @@ def parse_cve_item(cve, tech_name, version=None, source='keyword', confidence='l
         severity = 'MEDIUM'
  
     # ── Exploit-DB enrichment ─────────────────────────────────────────────────
-    # EXPLOIT_INDEX is populated at startup — lookup is O(1), no API call
+   
     exploits          = EXPLOIT_INDEX.get(cve_id, [])
     exploit_available = len(exploits) > 0
-    exploit_urls      = exploits[:3]   # cap at 3 links per CVE
+    exploit_urls      = exploits[:3]   
     # ─────────────────────────────────────────────────────────────────────────
  
     return {
@@ -717,12 +715,10 @@ def _fetch_nvd_by_range(tech_name, cpe_base, version, min_year=2020):
     for that product across all versions, which we cannot call 'verified'
     without knowing what version the site is actually running.
     """
-    if not version:          # ← ADD THIS
-        return []            # ← ADD THIS
+    if not version:          
+        return []           
 
-    # ... rest of function unchanged
- 
-    # virtualMatchString uses the base CPE with wildcard version
+    
     virtual_match = f"{cpe_base}:*:*:*:*:*:*:*:*"
  
     params = {
@@ -786,11 +782,10 @@ def fetch_cves_by_cpe(tech_name, version, min_year=2020):
     if not cpe_base:
         return []
  
-    # Primary: range query (works for unindexed versions like 6.8.2)
+    
     range_results = _fetch_nvd_by_range(tech_name, cpe_base, ver, min_year)
  
-    # Fallback: exact cpeName for older well-indexed versions
-    # Skip if range already returned results to avoid duplicates
+    
     if not range_results and ver:
         exact_cpe = f"{cpe_base}:{ver}:*:*:*:*:*:*:*"
         key       = f"cpe_exact:{tech_name}:{ver}:{min_year}"
@@ -963,7 +958,7 @@ def run_scan(domain, mode='full', session_id=None):
     if mode == 'quick':
         return result
 
-    # Single HTML fetch shared with phase 2 — no duplicate fetches
+    
     html_content = None
     raw_headers  = None
     try:
@@ -978,10 +973,7 @@ def run_scan(domain, mode='full', session_id=None):
     except Exception:
         logger.warning(f"Could not fetch HTML for {domain}")
 
-    # Phases 2 + 3 fire simultaneously.
-    # Phase 4 fires the instant phase 2 finishes (needs tech list).
-    # Phase 3 may still be running while phase 4 runs — both finish
-    # before we collect results.
+    
     with futures.ThreadPoolExecutor(max_workers=3) as ex:
         f_tech = ex.submit(scan_tech_stack, domain, html_content, raw_headers)
         f_subs = ex.submit(scan_subdomains, domain, session_id)

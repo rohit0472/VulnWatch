@@ -8,26 +8,13 @@ from threading import Semaphore
 logger = logging.getLogger(__name__)
 
 scheduler  = BackgroundScheduler()
-scan_limiter = Semaphore(1)   # max 1 concurrent monitor scan
+scan_limiter = Semaphore(1)   
 
 
 def scan_monitored_domain(domain_id, domain, alert_email, user_id):
-    # """
-    # Runs a full scan for a monitored domain, saves to DB,
-    # and sends an alert email if new high/medium CVEs are found.
-
-    # BUG 2 FIX — semaphore now wraps the ENTIRE function body,
-    # not just the print statement.
-
-    # BUG 4 FIX — Flask app context is pushed inside the thread
-    # so Flask-Mail can send email. Without this, mail.send() raises
-    # RuntimeError: working outside of application context, which gets
-    # silently swallowed by the except block and no email is ever sent.
-    # """
+    
     with scan_limiter:
-        # ── Push Flask app context ────────────────────────────────
-        # Required for Flask-Mail and any Flask extensions used here.
-        # Without this, all mail.send() calls fail silently.
+       
         from app import create_app
         app = create_app()
 
@@ -76,9 +63,6 @@ def scan_monitored_domain(domain_id, domain, alert_email, user_id):
 
                 logger.info(f"Total CVEs found for {domain}: {len(all_cves)}")
 
-                # ── BUG 1 FIX — log exactly what was_alerted_recently returns ──
-                # Previously: if this function had any bug or stale data,
-                # new_cves stayed empty and no email was ever sent.
                 new_cves = []
                 for cve in all_cves:
                     cve_id = cve.get('id')
@@ -98,7 +82,7 @@ def scan_monitored_domain(domain_id, domain, alert_email, user_id):
 
                 logger.info(f"New CVEs to alert for {domain}: {len(new_cves)}")
 
-                # Sort: verified (high confidence) first, then by score descending
+               
                 confidence_order = {'high': 0, 'medium': 1, 'low': 2}
                 new_cves.sort(key=lambda c: (
                     confidence_order.get(c.get('confidence', 'low'), 2),

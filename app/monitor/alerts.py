@@ -1,6 +1,6 @@
 from flask_mail import Message
 from app import mail
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,48 +8,60 @@ logger = logging.getLogger(__name__)
 
 def send_alert_email(to_email, domain, cves):
     try:
-        verified = [c for c in cves if c.get('confidence') == 'high']
-        possible = [c for c in cves if c.get('confidence') == 'medium']
+        verified = sorted(
+            [c for c in cves if c.get('confidence') == 'high'],
+            key=lambda c: c.get('score') or 0, reverse=True
+        )
+        possible = sorted(
+            [c for c in cves if c.get('confidence') == 'medium'],
+            key=lambda c: c.get('score') or 0, reverse=True
+        )
 
         if not verified and not possible:
-            logger.info(f"No high/medium CVEs for {domain} — skipping alert")
+            logger.info(f"No alertable CVEs for {domain} — skipping")
             return False
 
-        def sort_key(c):
-            return c.get('score') or 0
+        # Count exploits split by type
+        verified_exploits = sum(1 for c in verified if c.get('exploit_available'))
+        possible_exploits = sum(1 for c in possible if c.get('exploit_available'))
+        total_exploits    = verified_exploits + possible_exploits
 
-        verified = sorted(verified, key=sort_key, reverse=True)
-        possible = sorted(possible, key=sort_key, reverse=True)
+        # ── Subject line — clear and honest ──────────────────────────────
+        subject_parts = []
+        if verified:
+            subject_parts.append(f"{len(verified)} Verified CVEs")
+        if possible:
+            subject_parts.append(f"{len(possible)} Possible CVEs")
+        if total_exploits:
+            subject_parts.append(f"{total_exploits} Exploit(s) Available")
 
-        parts = []
-        if verified: parts.append(f"{len(verified)} Verified")
-        if possible: parts.append(f"{len(possible)} Possible")
-        subject = f"VulnWatch Alert — {' + '.join(parts)} Vulnerabilities on {domain}"
+        subject = f"VulnWatch Alert — {domain} — {' | '.join(subject_parts)}"
 
-        def cve_block(cve):
+        # ── CVE block builder ─────────────────────────────────────────────
+        def cve_block(cve, is_verified):
             sev   = cve.get('severity', 'UNKNOWN')
             score = cve.get('score', 'N/A')
             emoji = ("🔴" if sev == "CRITICAL" else
-                     "🟠" if sev == "HIGH" else
-                     "🟡" if sev == "MEDIUM" else "⚪")
-            kev_line     = "  ⚠️  Listed in CISA KEV\n" if cve.get('kev') else ""
-            exploit_line = ""
+                     "🟠" if sev == "HIGH"     else
+                     "🟡" if sev == "MEDIUM"   else "⚪")
+            kev_line = "  ⚠️  Listed in CISA KEV\n" if cve.get('kev') else ""
 
+            exploit_line = ""
             if cve.get('exploit_available'):
-                exploit_urls = cve.get('exploit_urls', [])
-                if exploit_urls:
-                    first = exploit_urls[0]
-                    title = first.get('title', 'Exploit available')
-                    url   = first.get('url', '')
+                urls = cve.get('exploit_urls', [])
+                # Label differs: Verified exploit vs Possible exploit
+                label = "🔥 Exploit Available" if is_verified else "⚠️  Possible Exploit (unconfirmed version)"
+                if urls:
+                    first = urls[0]
                     exploit_line = (
-                        f"  🔥 Exploit Available\n"
-                        f"     {title}\n"
-                        f"     {url}\n"
+                        f"  {label}\n"
+                        f"     {first.get('title', '')}\n"
+                        f"     {first.get('url', '')}\n"
                     )
-                    if len(exploit_urls) > 1:
-                        exploit_line += f"     + {len(exploit_urls) - 1} more exploit(s)\n"
+                    if len(urls) > 1:
+                        exploit_line += f"     + {len(urls)-1} more exploit(s)\n"
                 else:
-                    exploit_line = "  🔥 Exploit Available\n"
+                    exploit_line = f"  {label}\n"
 
             return (
                 f"{emoji} {cve.get('id')}\n"
@@ -60,52 +72,57 @@ def send_alert_email(to_email, domain, cves):
                 f"{exploit_line}"
             )
 
+        # ── Verified section — strong action language ─────────────────────
         verified_section = ""
         if verified:
             verified_section = (
                 "VERIFIED CVEs  (version-matched, high confidence)\n"
+                "Action Required — patch or mitigate these immediately\n"
                 + "-" * 47 + "\n"
-                + "\n".join(cve_block(c) for c in verified[:5])
+                + "\n".join(cve_block(c, True) for c in verified[:5])
             )
             if len(verified) > 5:
-                verified_section += f"  ... and {len(verified) - 5} more verified CVEs.\n"
+                verified_section += f"  ... and {len(verified)-5} more verified CVEs in dashboard.\n"
 
+        # ── Possible section — softer investigation language ──────────────
         possible_section = ""
         if possible:
             possible_section = (
-                "POSSIBLE CVEs  (keyword-matched, may include false positives)\n"
+                "POSSIBLE CVEs  (keyword-matched, version unknown)\n"
+                "Investigation Recommended — confirm before acting\n"
                 + "-" * 47 + "\n"
-                + "\n".join(cve_block(c) for c in possible[:5])
+                + "\n".join(cve_block(c, False) for c in possible[:5])
             )
             if len(possible) > 5:
-                possible_section += f"  ... and {len(possible) - 5} more possible CVEs.\n"
+                possible_section += f"  ... and {len(possible)-5} more possible CVEs in dashboard.\n"
 
-        total_exploits = sum(
-            1 for c in (verified + possible) if c.get('exploit_available')
-        )
+        # ── Exploit summary ───────────────────────────────────────────────
         exploit_summary = ""
-        if total_exploits > 0:
-            exploit_summary = (
-                f"\n{total_exploits} CVE(s) above have public exploits available.\n"
-                f"Prioritise these for immediate remediation.\n"
-            )
+        if total_exploits:
+            lines = []
+            if verified_exploits:
+                lines.append(f"  {verified_exploits} verified CVE(s) have confirmed public exploits — act immediately.")
+            if possible_exploits:
+                lines.append(f"  {possible_exploits} possible CVE(s) may have related exploits — investigate.")
+            exploit_summary = "\nExploit Summary\n" + "-"*47 + "\n" + "\n".join(lines) + "\n"
 
-        scan_time     = datetime.utcnow().strftime('%Y-%m-%d %H:%M')
+        IST = timedelta(hours=5, minutes=30)
+        scan_time = (datetime.utcnow() + IST).strftime('%Y-%m-%d %H:%M IST')
         dashboard_url = 'https://vulnwatch.in/history'
 
         body = f"""VulnWatch Security Alert
 {"=" * 47}
 
 Target Domain : {domain}
-Scan Time     : {scan_time} UTC
+Scan Time     : {scan_time} 
 
 New vulnerabilities detected during scheduled monitoring.
 
 Summary
 {"-" * 47}
   Verified CVEs (high confidence) : {len(verified)}
-  Possible CVEs (keyword-matched) : {len(possible)}
-  CVEs with public exploits       : {total_exploits}
+  Possible CVEs (keyword-matched)  : {len(possible)}
+  CVEs with public exploits        : {total_exploits}
 
 {verified_section}
 {possible_section}{exploit_summary}
@@ -113,19 +130,21 @@ Summary
 
 Recommended Actions
 {"-" * 47}
-  * Prioritize CVEs marked Exploit Available - public PoC exists
-  * Verified CVEs are version-matched - act on these immediately
-  * Possible CVEs need manual confirmation before remediation
+  * Verified CVEs are version-matched — act on these first
+  * Possible CVEs need manual version confirmation before remediation
+  * CVEs marked with exploits have publicly available attack code
   * Update affected technologies to their latest patched versions
 
 View full report : {dashboard_url}
 
 - VulnWatch Monitoring System
+
+Note: Possible CVEs are keyword-based matches and may include
+false positives. Always verify before taking action.
 """
 
         msg = Message(subject=subject, recipients=[to_email], body=body)
         mail.send(msg)
-
         logger.info(
             f"Alert sent to {to_email} for {domain} "
             f"({len(verified)} verified, {len(possible)} possible, "

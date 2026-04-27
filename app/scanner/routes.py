@@ -28,7 +28,7 @@ def scan():
             return render_template('scanner/scan.html',
                                    result=None, prefill_domain='', scan_id=None)
 
-        # ── Create a DB record so history works even if scan errors ──
+        
         session_id  = str(current_user.id)
         insert_result = scans_collection.insert_one({
             'user_id':      str(current_user.id),
@@ -39,9 +39,7 @@ def scan():
         })
         scan_id = str(insert_result.inserted_id)
 
-        # ── Run scan synchronously ────────────────────────────────────
-        # fetch() in scanner.js keeps the loader alive while this blocks.
-        # No background thread needed — the browser is waiting via fetch().
+       
         try:
             result = run_scan(domain, mode='full', session_id=session_id)
         except Exception:
@@ -62,13 +60,14 @@ def scan():
                     'scanned_at': datetime.utcnow(),
                 }}
             )
-            # attach input_domain so template can show it
+            
             result['input_domain'] = domain
         else:
             scans_collection.update_one(
                 {'_id': ObjectId(scan_id)},
                 {'$set': {'status': 'failed', 'scanned_at': datetime.utcnow()}}
             )
+
 
         return render_template('scanner/scan.html',
                                result=result,
