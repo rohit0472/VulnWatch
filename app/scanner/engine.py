@@ -41,6 +41,8 @@ SUBDOMAIN_WORKERS = 5     # parallel subdomain-source threads
 DNS_WORKERS       = 10    # parallel DNS brute-force threads
 CACHE_TTL         = 300   # 5 minutes
 MAX_SUBDOMAINS    = 50
+PHASE_TIMEOUT     = 45    # seconds — max wait for tech stack or subdomain phase
+CVE_TIMEOUT       = 50 
 
 # ─── thread-safe in-process cache ────────────────────────────────────────────
 _cache_lock = threading.Lock()
@@ -270,11 +272,12 @@ def calculate_risk_score(headers_result, cves_result=None, tech_stack=None, subd
 # ─────────────────────────────────────────────────────────────────────────────
 
 def scan_headers(domain, mode='full'):
+    import requests, certifi
     timeout        = 4 if mode == 'quick' else REQUEST_TIMEOUT
     https_url      = 'https://' + domain
     http_url       = 'http://'  + domain
     ua             = {'User-Agent': 'Mozilla/5.0 (VulnWatch Security Scanner)'}
-
+ 
     result = {
         'final_url': None, 'https': False, 'https_redirect': False,
         'server': None, 'powered_by': None, 'security_headers': {},
@@ -282,54 +285,53 @@ def scan_headers(domain, mode='full'):
         'header_score': 0, 'header_grade': 'F',
         'error': None, 'ssl_issue': False,
     }
-
+ 
+    response = None   # we return this so run_scan can reuse it
+ 
     try:
         response = requests.get(https_url, timeout=timeout,
                                 allow_redirects=True, headers=ua,
                                 verify=certifi.where())
     except requests.exceptions.SSLError:
-        logger.warning(f"SSL failed, retrying HTTP for {domain}")
         result['ssl_issue'] = True
         try:
             response = requests.get(http_url, timeout=timeout,
                                     allow_redirects=True, headers=ua)
         except Exception:
             result['error'] = 'SSL error and HTTP fallback failed'
-            return result
+            return result, None          # ← tuple
     except requests.exceptions.ConnectionError:
         result['error'] = 'Could not connect to domain'
-        return result
+        return result, None
     except requests.exceptions.Timeout:
         result['error'] = 'Request timed out'
-        return result
+        return result, None
     except Exception:
         result['error'] = 'Unexpected error during scan'
-        logger.error(f"Unexpected error scanning {https_url}", exc_info=True)
-        return result
-
+        return result, None
+ 
     result['status_code'] = response.status_code
     result['final_url']   = response.url
     result['https']       = response.url.startswith('https://')
     hdrs                  = response.headers
     result['server']      = hdrs.get('Server',       'Hidden')
     result['powered_by']  = hdrs.get('X-Powered-By', 'Hidden')
-
+ 
     for h in SECURITY_HEADERS:
         v = hdrs.get(h)
         if v:
             result['security_headers'][h] = v
         else:
             result['missing_headers'].append(h)
-
+ 
     present                = len(result['security_headers'])
     result['header_score'] = round((present / len(SECURITY_HEADERS)) * 100)
     result['header_grade'] = get_header_grade(result['header_score'])
-
-    # No second HTTP request needed — non-empty history + https final URL = redirect
+ 
     if result['https'] and not result['ssl_issue']:
         result['https_redirect'] = len(response.history) > 0
-
-    return result
+ 
+    return result, response
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -448,7 +450,7 @@ def scan_tech_stack(domain, html_content=None, headers=None):
 def _fetch_crtsh(domain):
     found = set()
     url   = f"https://crt.sh/?q=%.{domain}&output=json"
-    for wait in [0, 2, 5]:
+    for wait in [0, 1, 3]:
         time.sleep(wait)
         try:
             r = requests.get(url, timeout=REQUEST_TIMEOUT,
@@ -723,7 +725,7 @@ def _fetch_nvd_by_range(tech_name, cpe_base, version, min_year=2020):
  
     params = {
         'virtualMatchString':   virtual_match,
-        'resultsPerPage':       50,
+        'resultsPerPage':       20,
     }
     if version:
         params['versionEndIncluding'] = version
@@ -793,7 +795,7 @@ def fetch_cves_by_cpe(tech_name, version, min_year=2020):
         if cached is not None:
             return cached
         exact = _fetch_nvd(
-            {'cpeName': exact_cpe, 'resultsPerPage': 50},
+            {'cpeName': exact_cpe, 'resultsPerPage': 20},
             tech_name, ver, 'cpe', 'high', min_year
         )
         _set_cache(_nvd_cache, key, exact)
@@ -817,7 +819,7 @@ def fetch_cves_by_keyword(tech_name, version=None, min_year=2020, confidence='lo
             continue
  
         result = _fetch_nvd(
-            {'keywordSearch': keyword, 'resultsPerPage': 50},
+            {'keywordSearch': keyword, 'resultsPerPage': 20},
             tech_name, version, 'keyword', confidence, min_year
         )
         _set_cache(_nvd_cache, key, result)
@@ -931,13 +933,19 @@ def match_cves(tech_stack):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_scan(domain, mode='full', session_id=None):
+    import re, socket, time, logging, threading, requests, validators, certifi
+    from datetime import datetime
+    from concurrent import futures
+ 
+    logger = logging.getLogger(__name__)
+ 
     input_domain = domain
     domain       = normalize_domain(domain)
-
+ 
     is_valid, error = validate_domain(domain)
     if not is_valid:
         return {'error': error, 'input_domain': input_domain}
-
+ 
     result = {
         'input_domain': input_domain,
         'domain':       domain,
@@ -949,67 +957,95 @@ def run_scan(domain, mode='full', session_id=None):
         'cves':         None,
         'risk_score':   None,
     }
-
-    # Phase 1 — must complete first
-    result['headers'] = scan_headers(domain, mode=mode)
+ 
+    # Phase 1 — headers (must complete first)
+    # CHANGE 4 — scan_headers now returns (result_dict, raw_response)
+    # so we can reuse the response for HTML without a second request.
+    headers_result, raw_response = scan_headers(domain, mode=mode)
+    result['headers'] = headers_result
+ 
     if result['headers']['error'] and not result['headers']['ssl_issue']:
         return result
-
+ 
     if mode == 'quick':
         return result
-
-    
+ 
+    # CHANGE 4 — reuse response from scan_headers, no second request
     html_content = None
     raw_headers  = None
-    try:
-        r = requests.get(
-            'https://' + domain, timeout=REQUEST_TIMEOUT,
-            allow_redirects=True,
-            headers={'User-Agent': 'Mozilla/5.0 (VulnWatch Security Scanner)'},
-            verify=certifi.where()
-        )
-        html_content = r.text
-        raw_headers  = dict(r.headers)
-    except Exception:
-        logger.warning(f"Could not fetch HTML for {domain}")
-
-    
+    if raw_response is not None:
+        try:
+            html_content = raw_response.text
+            raw_headers  = dict(raw_response.headers)
+        except Exception:
+            logger.warning(f"Could not read HTML from scan_headers response for {domain}")
+ 
+    # Phases 2 + 3 + 4 — parallel with per-future timeouts
     with futures.ThreadPoolExecutor(max_workers=3) as ex:
         f_tech = ex.submit(scan_tech_stack, domain, html_content, raw_headers)
         f_subs = ex.submit(scan_subdomains, domain, session_id)
-
-        tech_stack           = f_tech.result()
+ 
+        # Phase 2 — tech stack
+        try:
+            tech_stack = f_tech.result(timeout=PHASE_TIMEOUT)
+        except futures.TimeoutError:
+            logger.warning(f"Tech stack timed out for {domain}")
+            tech_stack = {'technologies': [], 'error': 'Tech stack scan timed out'}
+        except Exception:
+            logger.error(f"Tech stack failed for {domain}", exc_info=True)
+            tech_stack = {'technologies': [], 'error': 'Tech stack scan failed'}
+ 
         result['tech_stack'] = tech_stack
-
-        f_cves = ex.submit(match_cves, tech_stack)   # starts while f_subs still runs
-
-        subs = f_subs.result()
-        result['subdomains'] = subs if (subs and not subs.get('scan_failed')) else {
-            'subdomains': [], 'total_found': 0,
-            'confidence': 'low', 'scan_failed': True, 'sources_used': [],
-        }
-
-        result['cves'] = f_cves.result()
-        if not result.get('cves'):
+ 
+        # Phase 4 — CVEs (starts as soon as tech stack done)
+        f_cves = ex.submit(match_cves, tech_stack)
+ 
+        # Phase 3 — subdomains
+        try:
+            subs = f_subs.result(timeout=PHASE_TIMEOUT)
+            result['subdomains'] = subs if (subs and not subs.get('scan_failed')) else {
+                'subdomains': [], 'total_found': 0,
+                'confidence': 'low', 'scan_failed': True, 'sources_used': [],
+            }
+        except futures.TimeoutError:
+            logger.warning(f"Subdomain scan timed out for {domain}")
+            result['subdomains'] = {
+                'subdomains': [], 'total_found': 0,
+                'confidence': 'low', 'scan_failed': True, 'sources_used': [],
+                'error': 'Subdomain scan timed out',
+            }
+        except Exception:
+            logger.error(f"Subdomain scan failed for {domain}", exc_info=True)
+            result['subdomains'] = {
+                'subdomains': [], 'total_found': 0,
+                'confidence': 'low', 'scan_failed': True, 'sources_used': [],
+            }
+ 
+        # Phase 4 result
+        try:
+            result['cves'] = f_cves.result(timeout=CVE_TIMEOUT)
+        except futures.TimeoutError:
+            logger.warning(f"CVE matching timed out for {domain}")
             result['cves'] = {
-            'cves': [],
-            'total': 0,
-            'critical': 0,
-            'high': 0,
-            'medium': 0,
-            'low': 0,
-            'unknown': 0,
-            'high_confidence': 0,
-            'medium_confidence': 0,
-            'low_confidence': 0,
-            'error': None
-        }
-
+                'cves': [], 'total': 0,
+                'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'unknown': 0,
+                'high_confidence': 0, 'medium_confidence': 0, 'low_confidence': 0,
+                'error': 'CVE matching timed out — try rescanning',
+            }
+        except Exception:
+            logger.error(f"CVE matching failed for {domain}", exc_info=True)
+            result['cves'] = {
+                'cves': [], 'total': 0,
+                'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'unknown': 0,
+                'high_confidence': 0, 'medium_confidence': 0, 'low_confidence': 0,
+                'error': 'CVE matching failed',
+            }
+ 
     result['risk_score'] = calculate_risk_score(
         headers_result=result['headers'],
         cves_result=result['cves'],
         tech_stack=result['tech_stack'],
         subdomains_result=result['subdomains'],
     )
-
+ 
     return result

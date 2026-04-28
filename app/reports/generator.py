@@ -477,10 +477,17 @@ def generate_report(scan_data, username='User'):
             conf     = cve.get('confidence', 'low')
             conf_label = 'Verified' if conf == 'high' else 'Possible (Unconfirmed)'
             urls     = cve.get('exploit_urls', [])
-            title    = urls[0].get('title', '-') if urls else '-'
-            
-            if len(title) > 55:
-                title = title[:52] + '...'
+            raw_title = urls[0].get('title', '-') if urls else '-'
+
+            title = Paragraph(
+                raw_title,
+                ParagraphStyle(
+                'ExploitTitleWrap',
+                parent=styles['VMuted'],
+                fontSize=7.5,
+                leading=9
+                )
+            )
             exp_rows.append([
                 cve.get('id', ''),
                 conf_label,
@@ -490,7 +497,7 @@ def generate_report(scan_data, username='User'):
                 title,
             ])
 
-        exp_table = Table(exp_rows, colWidths=[3.5*cm, 1.8*cm, 2.8*cm, 2*cm, 1.4*cm, 5*cm])
+        exp_table = Table(exp_rows, colWidths=[3.2*cm, 3.2*cm, 2.5*cm, 2*cm, 1.4*cm, 4.7*cm])
         exp_style = [
             ('BACKGROUND',    (0,0), (-1,0),  RED),
             ('TEXTCOLOR',     (0,0), (-1,0),  WHITE),
