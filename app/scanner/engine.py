@@ -276,7 +276,7 @@ def scan_headers(domain, mode='full'):
     timeout        = 4 if mode == 'quick' else REQUEST_TIMEOUT
     https_url      = 'https://' + domain
     http_url       = 'http://'  + domain
-    ua             = {'User-Agent': 'Mozilla/5.0 (VulnWatch Security Scanner)'}
+    ua             = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
  
     result = {
         'final_url': None, 'https': False, 'https_redirect': False,
@@ -454,7 +454,7 @@ def _fetch_crtsh(domain):
         time.sleep(wait)
         try:
             r = requests.get(url, timeout=REQUEST_TIMEOUT,
-                             headers={'User-Agent': 'Mozilla/5.0 (VulnWatch Security Scanner)'})
+                             headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
             if r.status_code in [429, 403, 503]:
                 continue
             r.raise_for_status()
@@ -475,7 +475,7 @@ def _fetch_hackertarget(domain):
         r = requests.get(
             f"https://api.hackertarget.com/hostsearch/?q={domain}",
             timeout=REQUEST_TIMEOUT,
-            headers={'User-Agent': 'Mozilla/5.0 (VulnWatch Security Scanner)'}
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         )
         r.raise_for_status()
         for line in r.text.splitlines():
@@ -495,7 +495,7 @@ def _fetch_alienvault(domain):
         r = requests.get(
             f"https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns",
             timeout=REQUEST_TIMEOUT,
-            headers={'User-Agent': 'Mozilla/5.0 (VulnWatch Security Scanner)'}
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         )
         r.raise_for_status()
         for entry in r.json().get('passive_dns', []):
@@ -513,7 +513,7 @@ def _fetch_bufferover(domain):
         r = requests.get(
             f"https://tls.bufferover.run/dns?q=.{domain}",
             timeout=REQUEST_TIMEOUT,
-            headers={'User-Agent': 'Mozilla/5.0 (VulnWatch Security Scanner)'}
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         )
         r.raise_for_status()
         for entry in r.json().get('FDNS_A', []) or []:
