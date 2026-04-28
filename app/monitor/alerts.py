@@ -108,7 +108,7 @@ def send_alert_email(to_email, domain, cves):
 
         IST = timedelta(hours=5, minutes=30)
         scan_time = (datetime.utcnow() + IST).strftime('%Y-%m-%d %H:%M IST')
-        dashboard_url = 'https://vulnwatch-p7vd.onrender.com'
+        dashboard_url = 'https://vulnwatch-p7vd.onrender.com/scanner/history'
 
         body = f"""VulnWatch Security Alert
 {"=" * 47}
