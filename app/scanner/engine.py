@@ -6,7 +6,7 @@ import threading
 import requests
 import validators
 import certifi
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent import futures
 
 EXPLOIT_INDEX = {}
@@ -945,11 +945,14 @@ def run_scan(domain, mode='full', session_id=None):
     is_valid, error = validate_domain(domain)
     if not is_valid:
         return {'error': error, 'input_domain': input_domain}
+    
+    IST = timedelta(hours=5, minutes=30)
+    scanned_at = datetime.utcnow() + IST
  
     result = {
         'input_domain': input_domain,
         'domain':       domain,
-        'scanned_at':   datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+        'scanned_at':   scanned_at.strftime('%Y-%m-%d %H:%M:%S IST'),
         'mode':         mode,
         'headers':      None,
         'tech_stack':   None,
