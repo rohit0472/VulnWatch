@@ -156,6 +156,15 @@ def create_app():
     from app.admin.routes import admin_bp
     app.register_blueprint(admin_bp, url_prefix='/admin')
 
+    from flask import redirect, url_for
+    from flask_login import current_user
+
+    @app.route("/")
+    def home():
+        if current_user.is_authenticated:
+            return redirect(url_for("dashboard.index"))
+        return redirect(url_for("auth.login"))
+
     load_exploit_db() 
 
     return app

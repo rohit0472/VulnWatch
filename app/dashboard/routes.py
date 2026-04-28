@@ -224,43 +224,43 @@ def assess_risk(headers_result):
 
 
 
-@dashboard_bp.route('/api-keys', methods=['GET', 'POST'])
-@login_required
-def api_keys():
-    if request.method == 'POST':
-        action = request.form.get('action')
+# @dashboard_bp.route('/api-keys', methods=['GET', 'POST'])
+# @login_required
+# def api_keys():
+#     if request.method == 'POST':
+#         action = request.form.get('action')
 
-        if action == 'generate':
-            name = request.form.get('name', 'Default').strip()
-            key, error = APIKey.generate(current_user.id, name)
-            if error:
-                flash(error, 'danger')
-            else:
-                flash(f'API key generated: {key} — Save this now, it won\'t be shown again!', 'success')
+#         if action == 'generate':
+#             name = request.form.get('name', 'Default').strip()
+#             key, error = APIKey.generate(current_user.id, name)
+#             if error:
+#                 flash(error, 'danger')
+#             else:
+#                 flash(f'API key generated: {key} — Save this now, it won\'t be shown again!', 'success')
 
-        elif action == 'revoke':
-            key_id = request.form.get('key_id')
-            if APIKey.revoke(key_id, current_user.id):
-                flash('API key revoked.', 'info')
+#         elif action == 'revoke':
+#             key_id = request.form.get('key_id')
+#             if APIKey.revoke(key_id, current_user.id):
+#                 flash('API key revoked.', 'info')
 
-        elif action == 'regenerate':
-            key_id = request.form.get('key_id')
-            new_key, error = APIKey.regenerate(key_id, current_user.id)
-            if error:
-                flash(error, 'danger')
-            else:
-                flash(f'New key: {new_key} — Save this now!', 'success')
+#         elif action == 'regenerate':
+#             key_id = request.form.get('key_id')
+#             new_key, error = APIKey.regenerate(key_id, current_user.id)
+#             if error:
+#                 flash(error, 'danger')
+#             else:
+#                 flash(f'New key: {new_key} — Save this now!', 'success')
 
-        return redirect(url_for('dashboard.api_keys'))
+#         return redirect(url_for('dashboard.api_keys'))
 
-    keys = APIKey.get_by_user(current_user.id)
-    for k in keys:
-        k['_id'] = str(k['_id'])
-        if k.get('expires_at'):
-            k['expires_at_str'] = k['expires_at'].strftime('%Y-%m-%d')
-        if k.get('last_used'):
-            k['last_used_str'] = k['last_used'].strftime('%Y-%m-%d %H:%M')
-        else:
-            k['last_used_str'] = 'Never'
+#     keys = APIKey.get_by_user(current_user.id)
+#     for k in keys:
+#         k['_id'] = str(k['_id'])
+#         if k.get('expires_at'):
+#             k['expires_at_str'] = k['expires_at'].strftime('%Y-%m-%d')
+#         if k.get('last_used'):
+#             k['last_used_str'] = k['last_used'].strftime('%Y-%m-%d %H:%M')
+#         else:
+#             k['last_used_str'] = 'Never'
 
-    return render_template('dashboard/api_keys.html', keys=keys)
+#     return render_template('dashboard/api_keys.html', keys=keys)
