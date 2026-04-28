@@ -90,12 +90,17 @@ def view_scan(scan_id):
     admin_required()
 
     from bson import ObjectId
+    from datetime import timedelta
+    IST = timedelta(hours=5, minutes=30)
 
     scan = scans_collection.find_one({'_id': ObjectId(scan_id)})
 
     if not scan:
         abort(404)
 
+    if scan.get("scanned_at"):
+        scan["scanned_at_ist"] = scan["scanned_at"] + IST
+        
     # convert _id for template
     scan['_id'] = str(scan['_id'])
 
