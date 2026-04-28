@@ -22,7 +22,7 @@
         </h5>
     </div>
     <div class="card-body p-4">
-        <form method="POST" action="{{ url_for('dashboard.api_keys') }}">
+        <form method="POST" action="{# {{ url_for('dashboard.api_keys') }} #}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="generate">
             <div class="row g-3">
