@@ -1,7 +1,8 @@
-from flask_mail import Message
-from app import mail
 from datetime import datetime, timedelta
 import logging
+import resend
+import os
+resend.api_key = os.environ.get("RESEND_API_KEY")
 
 logger = logging.getLogger(__name__)
 
@@ -143,8 +144,12 @@ Note: Possible CVEs are keyword-based matches and may include
 false positives. Always verify before taking action.
 """
 
-        msg = Message(subject=subject, recipients=[to_email], body=body)
-        mail.send(msg)
+        resend.Emails.send({
+            "from": "VulnWatch <onboarding@resend.dev>",  # change after domain setup
+            "to": to_email,
+            "subject": subject,
+            "text": body
+        })
         logger.info(
             f"Alert sent to {to_email} for {domain} "
             f"({len(verified)} verified, {len(possible)} possible, "
@@ -152,6 +157,6 @@ false positives. Always verify before taking action.
         )
         return True
 
-    except Exception:
-        logger.error("Failed to send alert email", exc_info=True)
+    except Exception as e:
+        logger.error(f"Failed to send alert email to {to_email}: {e}", exc_info=True)
         return False
