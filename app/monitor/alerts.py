@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
 import logging
-import resend
 import os
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 resend.api_key = os.environ.get("RESEND_API_KEY")
 
 logger = logging.getLogger(__name__)
