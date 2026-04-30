@@ -3,7 +3,6 @@ import logging
 import os
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
-resend.api_key = os.environ.get("RESEND_API_KEY")
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +22,10 @@ def send_alert_email(to_email, domain, cves):
             logger.info(f"No alertable CVEs for {domain} — skipping")
             return False
 
-        # Count exploits split by type
         verified_exploits = sum(1 for c in verified if c.get('exploit_available'))
         possible_exploits = sum(1 for c in possible if c.get('exploit_available'))
         total_exploits    = verified_exploits + possible_exploits
 
-        # ── Subject line — clear and honest ──────────────────────────────
         subject_parts = []
         if verified:
             subject_parts.append(f"{len(verified)} Verified CVEs")
@@ -39,7 +36,6 @@ def send_alert_email(to_email, domain, cves):
 
         subject = f"VulnWatch Alert — {domain} — {' | '.join(subject_parts)}"
 
-        # ── CVE block builder ─────────────────────────────────────────────
         def cve_block(cve, is_verified):
             sev   = cve.get('severity', 'UNKNOWN')
             score = cve.get('score', 'N/A')
@@ -51,7 +47,6 @@ def send_alert_email(to_email, domain, cves):
             exploit_line = ""
             if cve.get('exploit_available'):
                 urls = cve.get('exploit_urls', [])
-                # Label differs: Verified exploit vs Possible exploit
                 label = "🔥 Exploit Available" if is_verified else "⚠️  Possible Exploit (unconfirmed version)"
                 if urls:
                     first = urls[0]
@@ -74,7 +69,6 @@ def send_alert_email(to_email, domain, cves):
                 f"{exploit_line}"
             )
 
-        # ── Verified section — strong action language ─────────────────────
         verified_section = ""
         if verified:
             verified_section = (
@@ -86,7 +80,6 @@ def send_alert_email(to_email, domain, cves):
             if len(verified) > 5:
                 verified_section += f"  ... and {len(verified)-5} more verified CVEs in dashboard.\n"
 
-        # ── Possible section — softer investigation language ──────────────
         possible_section = ""
         if possible:
             possible_section = (
@@ -98,7 +91,6 @@ def send_alert_email(to_email, domain, cves):
             if len(possible) > 5:
                 possible_section += f"  ... and {len(possible)-5} more possible CVEs in dashboard.\n"
 
-        # ── Exploit summary ───────────────────────────────────────────────
         exploit_summary = ""
         if total_exploits:
             lines = []
@@ -116,7 +108,7 @@ def send_alert_email(to_email, domain, cves):
 {"=" * 47}
 
 Target Domain : {domain}
-Scan Time     : {scan_time} 
+Scan Time     : {scan_time}
 
 New vulnerabilities detected during scheduled monitoring.
 
@@ -145,12 +137,25 @@ Note: Possible CVEs are keyword-based matches and may include
 false positives. Always verify before taking action.
 """
 
-        resend.Emails.send({
-            "from": "VulnWatch <onboarding@resend.dev>",  # change after domain setup
-            "to": to_email,
-            "subject": subject,
-            "text": body
-        })
+        # ── Brevo API ─────────────────────────────────────────────────────
+        configuration = sib_api_v3_sdk.Configuration()
+        configuration.api_key['api-key'] = os.environ.get("BREVO_API_KEY")
+
+        api_instance = sib_api_v3_sdk.TransactionalEmailsApi(
+            sib_api_v3_sdk.ApiClient(configuration)
+        )
+
+        send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+            to=[{"email": to_email}],
+            sender={
+                "email": os.environ.get("BREVO_SENDER_EMAIL"),
+                "name": "VulnWatch"
+            },
+            subject=subject,
+            text_content=body
+        )
+
+        api_instance.send_transac_email(send_smtp_email)
         logger.info(
             f"Alert sent to {to_email} for {domain} "
             f"({len(verified)} verified, {len(possible)} possible, "
@@ -158,6 +163,9 @@ false positives. Always verify before taking action.
         )
         return True
 
+    except ApiException as e:
+        logger.error(f"Brevo API error sending to {to_email}: {e}", exc_info=True)
+        return False
     except Exception as e:
         logger.error(f"Failed to send alert email to {to_email}: {e}", exc_info=True)
         return False
