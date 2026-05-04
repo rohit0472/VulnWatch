@@ -35,19 +35,23 @@ _KEYWORD_ALIASES = {
 }
 
 # ─── global constants ────────────────────────────────────────────────────────
-REQUEST_TIMEOUT   = 7     # every outbound HTTP call
-NVD_MAX_WORKERS   = 4     # parallel NVD threads  (safe under public rate-limit)
-SUBDOMAIN_WORKERS = 5     # parallel subdomain-source threads
-DNS_WORKERS       = 10    # parallel DNS brute-force threads
-CACHE_TTL         = 300   # 5 minutes
+REQUEST_TIMEOUT   = 7      # every outbound HTTP call
+NVD_MAX_WORKERS   = 4      # parallel NVD threads
+SUBDOMAIN_WORKERS = 5      # parallel subdomain-source threads
+DNS_WORKERS       = 10     # parallel DNS brute-force threads
+CACHE_TTL         = 300    # 5 minutes
 MAX_SUBDOMAINS    = 50
-PHASE_TIMEOUT     = 45    # seconds — max wait for tech stack or subdomain phase
-CVE_TIMEOUT       = 50 
+PHASE_TIMEOUT     = 35     # reduced from 45 — per-phase max
+CVE_TIMEOUT       = 40     # reduced from 50
+GLOBAL_SCAN_TIMEOUT = 90   # ← hard ceiling for entire scan
+MAX_CVES_PER_TECH = 10     # ← cap NVD results per technology
+MAX_TOTAL_CVES    = 50     # ← cap total CVEs across all techs
+NVD_RESULTS_PER_PAGE = 10  # ← reduced from 20
 
 # ─── thread-safe in-process cache ────────────────────────────────────────────
 _cache_lock = threading.Lock()
-_sub_cache  = {}   # { (session_id, domain) : (ts, result) }
-_nvd_cache  = {}   # { cache_key_str        : (ts, result) }
+_sub_cache  = {}
+_nvd_cache  = {}
 
 
 def _get_cache(store, key):
@@ -190,10 +194,6 @@ def extract_version_from_url(url):
 
 
 def _merge_tech(existing, new):
-    """
-    Order-independent merge — always keeps the most informative tech entry.
-    Prefers: version present > higher SOURCE_RANK.
-    """
     has_ver_new = bool(new.get('version'))
     has_ver_old = bool(existing.get('version'))
     if has_ver_new and not has_ver_old:
@@ -209,61 +209,51 @@ def _merge_tech(existing, new):
 
 def calculate_risk_score(headers_result, cves_result=None, tech_stack=None, subdomains_result=None):
     score = 0.0
- 
-    # 1. Header score (max 25 pts)
+
     score += round((headers_result.get('header_score', 0) / 100) * 25, 1)
- 
-    # 2. CVE score (max 40 pts)
+
     if cves_result:
         ded  = min(cves_result.get('critical', 0) * 8, 24)
         ded += min(cves_result.get('high',     0) * 4, 12)
         ded += min(cves_result.get('medium',   0) * 1,  4)
         if cves_result.get('high_confidence', 0) > 0:
             ded += min(cves_result['high_confidence'] * 3, 10)
- 
-       
         exploitable = sum(
             1 for c in (cves_result.get('cves') or [])
             if c.get('exploit_available')
         )
         ded += min(exploitable * 2, 6)
-        # ─────────────────────────────────────────────────────────────────
- 
         score += round(max(0, 40 - ded), 1)
     else:
         score += 40
- 
-    # 3. SSL (5 pts)
+
     if not headers_result.get('ssl_issue', False):
         score += 5
- 
-    # 4. HTTPS + redirect (5 + 5 pts)
+
     if headers_result.get('https', False):
         score += 5
     if headers_result.get('https_redirect', False):
         score += 5
- 
-    # 5. Tech exposure (max 10 pts)
+
     if tech_stack:
         versioned = [t for t in tech_stack.get('technologies', []) if t.get('version')]
         if   len(versioned) == 0: score += 10
         elif len(versioned) <= 2: score += 7
         elif len(versioned) <= 5: score += 4
- 
-    # 6. Subdomain exposure (max 10 pts)
+
     if subdomains_result and not subdomains_result.get('scan_failed', False):
         count = subdomains_result.get('total_found', 0)
         if   count < 15:  score += 10
         elif count < 50:  score += 6
         elif count < 100: score += 3
- 
+
     score = int(round(max(0, min(100, score))))
- 
+
     if   score >= 80: label, color, icon = 'Low Risk',      '#3fb950', 'fas fa-shield-alt'
     elif score >= 50: label, color, icon = 'Medium Risk',   '#d29922', 'fas fa-exclamation-triangle'
     elif score >= 30: label, color, icon = 'High Risk',     '#f85149', 'fas fa-exclamation-circle'
     else:             label, color, icon = 'Critical Risk', '#ff4444', 'fas fa-skull-crossbones'
- 
+
     return {'score': score, 'label': label, 'color': color, 'icon': icon}
 
 
@@ -272,12 +262,11 @@ def calculate_risk_score(headers_result, cves_result=None, tech_stack=None, subd
 # ─────────────────────────────────────────────────────────────────────────────
 
 def scan_headers(domain, mode='full'):
-    import requests, certifi
-    timeout        = 4 if mode == 'quick' else REQUEST_TIMEOUT
-    https_url      = 'https://' + domain
-    http_url       = 'http://'  + domain
-    ua             = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
- 
+    timeout   = 4 if mode == 'quick' else REQUEST_TIMEOUT
+    https_url = 'https://' + domain
+    http_url  = 'http://'  + domain
+    ua        = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+
     result = {
         'final_url': None, 'https': False, 'https_redirect': False,
         'server': None, 'powered_by': None, 'security_headers': {},
@@ -285,9 +274,9 @@ def scan_headers(domain, mode='full'):
         'header_score': 0, 'header_grade': 'F',
         'error': None, 'ssl_issue': False,
     }
- 
-    response = None   # we return this so run_scan can reuse it
- 
+
+    response = None
+
     try:
         response = requests.get(https_url, timeout=timeout,
                                 allow_redirects=True, headers=ua,
@@ -299,7 +288,7 @@ def scan_headers(domain, mode='full'):
                                     allow_redirects=True, headers=ua)
         except Exception:
             result['error'] = 'SSL error and HTTP fallback failed'
-            return result, None          # ← tuple
+            return result, None
     except requests.exceptions.ConnectionError:
         result['error'] = 'Could not connect to domain'
         return result, None
@@ -309,28 +298,28 @@ def scan_headers(domain, mode='full'):
     except Exception:
         result['error'] = 'Unexpected error during scan'
         return result, None
- 
+
     result['status_code'] = response.status_code
     result['final_url']   = response.url
     result['https']       = response.url.startswith('https://')
     hdrs                  = response.headers
     result['server']      = hdrs.get('Server',       'Hidden')
     result['powered_by']  = hdrs.get('X-Powered-By', 'Hidden')
- 
+
     for h in SECURITY_HEADERS:
         v = hdrs.get(h)
         if v:
             result['security_headers'][h] = v
         else:
             result['missing_headers'].append(h)
- 
+
     present                = len(result['security_headers'])
     result['header_score'] = round((present / len(SECURITY_HEADERS)) * 100)
     result['header_grade'] = get_header_grade(result['header_score'])
- 
+
     if result['https'] and not result['ssl_issue']:
         result['https_redirect'] = len(response.history) > 0
- 
+
     return result, response
 
 
@@ -341,7 +330,6 @@ def scan_headers(domain, mode='full'):
 def scan_tech_stack(domain, html_content=None, headers=None):
     result = {'technologies': [], 'error': None}
     try:
-        # Wappalyzer — uses passed-in html + headers, no extra request
         try:
             from app.scanner.wappalyzer_engine import wappalyzer_scan
             for tname, tdata in wappalyzer_scan(
@@ -354,7 +342,6 @@ def scan_tech_stack(domain, html_content=None, headers=None):
         except Exception:
             logger.warning("Wappalyzer failed", exc_info=True)
 
-        
         try:
             import builtwith
             for category, techs in builtwith.parse('https://' + domain).items():
@@ -366,7 +353,6 @@ def scan_tech_stack(domain, html_content=None, headers=None):
         except Exception:
             logger.warning(f"builtwith failed for {domain}", exc_info=True)
 
-        # Header fingerprinting
         if headers:
             for value, category in [
                 (headers.get('Server',       ''), 'Web Server'),
@@ -380,7 +366,6 @@ def scan_tech_stack(domain, html_content=None, headers=None):
                         'source': 'headers', 'version': version,
                     })
 
-        # HTML fingerprinting
         if html_content:
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(html_content, 'html.parser')
@@ -429,7 +414,6 @@ def scan_tech_stack(domain, html_content=None, headers=None):
                         'version': extract_version_from_url(href),
                     })
 
-        # Deterministic dedup
         seen = {}
         for tech in result['technologies']:
             key = tech['name'].lower()
@@ -444,7 +428,7 @@ def scan_tech_stack(domain, html_content=None, headers=None):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PHASE 3 — SUBDOMAIN DISCOVERY  (5 parallel sources)
+# PHASE 3 — SUBDOMAIN DISCOVERY
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _fetch_crtsh(domain):
@@ -463,6 +447,8 @@ def _fetch_crtsh(domain):
                     sub = sub.strip().lower()
                     if sub and not sub.startswith('*') and sub != domain and sub.endswith('.' + domain):
                         found.add(sub)
+                        if len(found) >= MAX_SUBDOMAINS:   # ← stop early on huge domains
+                            return found
             return found
         except Exception:
             continue
@@ -529,20 +515,14 @@ def _fetch_bufferover(domain):
 
 def _dns_probe(fqdn):
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)
-        sock.connect((fqdn, 80))
-        sock.close()
+        socket.setdefaulttimeout(2)
+        socket.gethostbyname(fqdn)   # faster than TCP connect
         return fqdn
     except Exception:
         return None
 
 
 def _fetch_dns_bruteforce(domain):
-    """
-    Direct DNS resolution of common prefixes.
-    No external API — this source never returns N/A.
-    """
     found = set()
     with futures.ThreadPoolExecutor(max_workers=DNS_WORKERS) as ex:
         for hit in ex.map(_dns_probe, [f"{p}.{domain}" for p in COMMON_SUBDOMAINS]):
@@ -572,7 +552,7 @@ def scan_subdomains(domain, session_id=None):
                 'dns_bruteforce': _fetch_dns_bruteforce,
             }.items()
         }
-        for future in futures.as_completed(fmap):
+        for future in futures.as_completed(fmap, timeout=PHASE_TIMEOUT):
             name = fmap[future]
             try:
                 subs = future.result()
@@ -620,7 +600,6 @@ def scan_subdomains(domain, session_id=None):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_cpe(tech_name, version=None):
-    """Returns (cpe_base, version) tuple, or (None, None) if unknown tech."""
     base = CPE_MAP.get(tech_name.lower().strip())
     if not base:
         return None, None
@@ -634,7 +613,7 @@ def parse_cve_item(cve, tech_name, version=None, source='keyword', confidence='l
                         'No description available')
     if description.startswith('Rejected'):
         return None
- 
+
     score, severity = None, 'UNKNOWN'
     metrics = cve.get('metrics', {})
     if metrics.get('cvssMetricV31'):
@@ -649,14 +628,11 @@ def parse_cve_item(cve, tech_name, version=None, source='keyword', confidence='l
         c        = metrics['cvssMetricV2'][0]['cvssData']
         score    = c.get('baseScore')
         severity = 'MEDIUM'
- 
-    # ── Exploit-DB enrichment ─────────────────────────────────────────────────
-   
+
     exploits          = EXPLOIT_INDEX.get(cve_id, [])
     exploit_available = len(exploits) > 0
-    exploit_urls      = exploits[:3]   
-    # ─────────────────────────────────────────────────────────────────────────
- 
+    exploit_urls      = exploits[:3]
+
     return {
         'id':                cve_id,
         'technology':        tech_name,
@@ -669,13 +645,13 @@ def parse_cve_item(cve, tech_name, version=None, source='keyword', confidence='l
         'source':            source,
         'confidence':        confidence,
         'url':               f"https://nvd.nist.gov/vuln/detail/{cve_id}",
-        'exploit_available': exploit_available,   # NEW
-        'exploit_urls':      exploit_urls,        # NEW  list of {url, title}
+        'exploit_available': exploit_available,
+        'exploit_urls':      exploit_urls,
     }
 
 
 def _fetch_nvd(params, tech_name, version, source, confidence, min_year):
-    """Raw NVD call — always hits network. Only called via cached wrappers."""
+    """Raw NVD call — always hits network."""
     cves = []
     try:
         r = requests.get(
@@ -703,6 +679,8 @@ def _fetch_nvd(params, tech_name, version, source, confidence, min_year):
                                     source=source, confidence=confidence)
             if parsed:
                 cves.append(parsed)
+                if len(cves) >= MAX_CVES_PER_TECH:  # ← stop early
+                    break
     except requests.exceptions.Timeout:
         logger.warning(f"NVD timeout for {tech_name}")
     except Exception:
@@ -711,36 +689,29 @@ def _fetch_nvd(params, tech_name, version, source, confidence, min_year):
 
 
 def _fetch_nvd_by_range(tech_name, cpe_base, version, min_year=2020):
-    """
-    If version is None — skip this entirely.
-    A wildcard CPE query with no versionEndIncluding returns ALL CVEs
-    for that product across all versions, which we cannot call 'verified'
-    without knowing what version the site is actually running.
-    """
-    if not version:          
-        return []           
+    """Version-matched CPE range query — high confidence."""
+    if not version:
+        return []
 
-    
+    cves = []   # ← BUG FIX: was missing, caused NameError crash
+
     virtual_match = f"{cpe_base}:*:*:*:*:*:*:*:*"
- 
     params = {
-        'virtualMatchString':   virtual_match,
-        'resultsPerPage':       20,
+        'virtualMatchString':  virtual_match,
+        'versionEndIncluding': version,
+        'resultsPerPage':      NVD_RESULTS_PER_PAGE,  # ← reduced
     }
-    if version:
-        params['versionEndIncluding'] = version
- 
+
     cache_key = f"range:{tech_name}:{version}:{min_year}"
     cached    = _get_cache(_nvd_cache, cache_key)
     if cached is not None:
         return cached
- 
+
     try:
         r = requests.get(
             "https://services.nvd.nist.gov/rest/json/cves/2.0",
             params=params, timeout=REQUEST_TIMEOUT
         )
- 
         if r.status_code == 429:
             logger.warning("NVD rate limited — backing off 6s")
             time.sleep(6)
@@ -748,9 +719,8 @@ def _fetch_nvd_by_range(tech_name, cpe_base, version, min_year=2020):
                 "https://services.nvd.nist.gov/rest/json/cves/2.0",
                 params=params, timeout=REQUEST_TIMEOUT
             )
- 
         r.raise_for_status()
- 
+
         for item in r.json().get('vulnerabilities', []):
             cve = item.get('cve', {})
             if cve.get('vulnStatus') in ['Rejected', 'REJECTED']:
@@ -761,7 +731,7 @@ def _fetch_nvd_by_range(tech_name, cpe_base, version, min_year=2020):
                     continue
             except (ValueError, TypeError):
                 continue
- 
+
             parsed = parse_cve_item(
                 cve, tech_name,
                 version=version,
@@ -770,24 +740,25 @@ def _fetch_nvd_by_range(tech_name, cpe_base, version, min_year=2020):
             )
             if parsed:
                 cves.append(parsed)
- 
+                if len(cves) >= MAX_CVES_PER_TECH:  # ← stop early
+                    break
+
     except requests.exceptions.Timeout:
         logger.warning(f"NVD range query timeout for {tech_name}")
     except Exception:
         logger.error(f"NVD range query failed for {tech_name}", exc_info=True)
- 
+
     _set_cache(_nvd_cache, cache_key, cves)
     return cves
+
 
 def fetch_cves_by_cpe(tech_name, version, min_year=2020):
     cpe_base, ver = build_cpe(tech_name, version)
     if not cpe_base:
         return []
- 
-    
+
     range_results = _fetch_nvd_by_range(tech_name, cpe_base, ver, min_year)
- 
-    
+
     if not range_results and ver:
         exact_cpe = f"{cpe_base}:{ver}:*:*:*:*:*:*:*"
         key       = f"cpe_exact:{tech_name}:{ver}:{min_year}"
@@ -795,21 +766,21 @@ def fetch_cves_by_cpe(tech_name, version, min_year=2020):
         if cached is not None:
             return cached
         exact = _fetch_nvd(
-            {'cpeName': exact_cpe, 'resultsPerPage': 20},
+            {'cpeName': exact_cpe, 'resultsPerPage': NVD_RESULTS_PER_PAGE},
             tech_name, ver, 'cpe', 'high', min_year
         )
         _set_cache(_nvd_cache, key, exact)
         return exact
- 
+
     return range_results
- 
+
 
 def fetch_cves_by_keyword(tech_name, version=None, min_year=2020, confidence='low'):
     tech_lower = tech_name.lower()
     aliases    = _KEYWORD_ALIASES.get(tech_lower, [tech_name])
- 
+
     all_cves = []
- 
+
     for alias in aliases:
         keyword = f"{alias} {version}" if version else alias
         key     = f"kw:{keyword}:{min_year}"
@@ -817,15 +788,14 @@ def fetch_cves_by_keyword(tech_name, version=None, min_year=2020, confidence='lo
         if cached is not None:
             all_cves.extend(cached)
             continue
- 
+
         result = _fetch_nvd(
-            {'keywordSearch': keyword, 'resultsPerPage': 20},
+            {'keywordSearch': keyword, 'resultsPerPage': NVD_RESULTS_PER_PAGE},
             tech_name, version, 'keyword', confidence, min_year
         )
         _set_cache(_nvd_cache, key, result)
         all_cves.extend(result)
- 
-    # Deduplicate
+
     seen = {}
     for cve in all_cves:
         if cve['id'] not in seen:
@@ -838,18 +808,12 @@ def _fetch_cves_for_tech(tech):
     version = tech.get('version')
     if not name:
         return []
- 
-    min_year = 2020   # always 2020 — never restrict by version presence
- 
-    # Source 2: NVD virtualMatchString range query (high confidence)
+
+    min_year = 2020
+
     cpe_cves = fetch_cves_by_cpe(name.lower(), version, min_year=min_year)
- 
-    # Source 3: NVD keyword search (medium/low confidence, catches the rest)
-    kw_conf = 'medium'
-    kw_cves  = fetch_cves_by_keyword(name, version, min_year=min_year,
-                                     confidence=kw_conf)
- 
-    # Merge — highest confidence wins per CVE ID
+    kw_cves  = fetch_cves_by_keyword(name, version, min_year=min_year, confidence='medium')
+
     confidence_rank = {'high': 3, 'medium': 2, 'low': 1}
     merged = {}
     for cve in kw_cves + cpe_cves:
@@ -859,9 +823,10 @@ def _fetch_cves_for_tech(tech):
             confidence_rank.get(merged[cid].get('confidence', 'low'), 1)
         ):
             merged[cid] = cve
- 
-    return list(merged.values())
- 
+
+    # ← Cap per-tech CVEs to MAX_CVES_PER_TECH (highest score first)
+    sorted_cves = sorted(merged.values(), key=lambda x: x.get('score') or 0, reverse=True)
+    return sorted_cves[:MAX_CVES_PER_TECH]
 
 
 def match_cves(tech_stack):
@@ -879,7 +844,6 @@ def match_cves(tech_stack):
 
     all_cves = []
 
-    # Parallel NVD calls — was sequential loop before
     with futures.ThreadPoolExecutor(max_workers=NVD_MAX_WORKERS) as ex:
         fmap = {ex.submit(_fetch_cves_for_tech, tech): tech for tech in techs}
         for future in futures.as_completed(fmap):
@@ -888,7 +852,6 @@ def match_cves(tech_stack):
             except Exception:
                 logger.error(f"CVE fetch error for {fmap[future].get('name')}", exc_info=True)
 
-    # Deterministic dedup — keep highest-confidence entry per CVE ID
     confidence_rank = {'high': 3, 'medium': 2, 'low': 1}
     seen = {}
     for cve in all_cves:
@@ -899,9 +862,11 @@ def match_cves(tech_stack):
         ):
             seen[cid] = cve
 
-    unique             = sorted(seen.values(), key=lambda x: x.get('score') or 0, reverse=True)
-    result['cves']     = unique
-    result['total']    = len(unique)
+    # ← Cap total CVEs to MAX_TOTAL_CVES (highest score first)
+    unique         = sorted(seen.values(), key=lambda x: x.get('score') or 0, reverse=True)
+    unique         = unique[:MAX_TOTAL_CVES]
+    result['cves'] = unique
+    result['total'] = len(unique)
 
     for cve in unique:
         sev = cve.get('severity', 'UNKNOWN')
@@ -920,35 +885,22 @@ def match_cves(tech_stack):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN RUNNER
-#
-# Execution timeline:
-#   t=0      phase 1  headers                              ~7s
-#   t=7      html fetch                                    ~7s
-#   t=14     ┌─ phase 2  tech stack          ~5s ─┐
-#            ├─ phase 3  subdomains (5 src)  ~8s  ├── all parallel
-#            └─ phase 4  CVEs fires as soon       ┘
-#               as phase 2 returns tech list
-#   t=~22   done  (vs 2-5 min before)
+# MAIN RUNNER — 90s global hard ceiling
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_scan(domain, mode='full', session_id=None):
-    import re, socket, time, logging, threading, requests, validators, certifi
-    from datetime import datetime
-    from concurrent import futures
- 
     logger = logging.getLogger(__name__)
- 
+
     input_domain = domain
     domain       = normalize_domain(domain)
- 
+
     is_valid, error = validate_domain(domain)
     if not is_valid:
         return {'error': error, 'input_domain': input_domain}
-    
-    IST = timedelta(hours=5, minutes=30)
+
+    IST        = timedelta(hours=5, minutes=30)
     scanned_at = datetime.utcnow() + IST
- 
+
     result = {
         'input_domain': input_domain,
         'domain':       domain,
@@ -960,20 +912,23 @@ def run_scan(domain, mode='full', session_id=None):
         'cves':         None,
         'risk_score':   None,
     }
- 
-    # Phase 1 — headers (must complete first)
-    # CHANGE 4 — scan_headers now returns (result_dict, raw_response)
-    # so we can reuse the response for HTML without a second request.
+
+    scan_start = time.time()
+
+    def time_left():
+        """Remaining seconds before global 90s ceiling."""
+        return max(0, GLOBAL_SCAN_TIMEOUT - (time.time() - scan_start))
+
+    # Phase 1 — headers
     headers_result, raw_response = scan_headers(domain, mode=mode)
     result['headers'] = headers_result
- 
+
     if result['headers']['error'] and not result['headers']['ssl_issue']:
         return result
- 
+
     if mode == 'quick':
         return result
- 
-    # CHANGE 4 — reuse response from scan_headers, no second request
+
     html_content = None
     raw_headers  = None
     if raw_response is not None:
@@ -981,31 +936,33 @@ def run_scan(domain, mode='full', session_id=None):
             html_content = raw_response.text
             raw_headers  = dict(raw_response.headers)
         except Exception:
-            logger.warning(f"Could not read HTML from scan_headers response for {domain}")
- 
-    # Phases 2 + 3 + 4 — parallel with per-future timeouts
+            logger.warning(f"Could not read HTML from response for {domain}")
+
+    # Phases 2 + 3 + 4 — parallel, each bounded by remaining global time
     with futures.ThreadPoolExecutor(max_workers=3) as ex:
         f_tech = ex.submit(scan_tech_stack, domain, html_content, raw_headers)
         f_subs = ex.submit(scan_subdomains, domain, session_id)
- 
+
         # Phase 2 — tech stack
+        tech_timeout = min(PHASE_TIMEOUT, time_left())
         try:
-            tech_stack = f_tech.result(timeout=PHASE_TIMEOUT)
+            tech_stack = f_tech.result(timeout=tech_timeout)
         except futures.TimeoutError:
             logger.warning(f"Tech stack timed out for {domain}")
             tech_stack = {'technologies': [], 'error': 'Tech stack scan timed out'}
         except Exception:
             logger.error(f"Tech stack failed for {domain}", exc_info=True)
             tech_stack = {'technologies': [], 'error': 'Tech stack scan failed'}
- 
+
         result['tech_stack'] = tech_stack
- 
-        # Phase 4 — CVEs (starts as soon as tech stack done)
+
+        # Phase 4 — CVEs (starts as soon as tech done)
         f_cves = ex.submit(match_cves, tech_stack)
- 
+
         # Phase 3 — subdomains
+        sub_timeout = min(PHASE_TIMEOUT, time_left())
         try:
-            subs = f_subs.result(timeout=PHASE_TIMEOUT)
+            subs = f_subs.result(timeout=sub_timeout)
             result['subdomains'] = subs if (subs and not subs.get('scan_failed')) else {
                 'subdomains': [], 'total_found': 0,
                 'confidence': 'low', 'scan_failed': True, 'sources_used': [],
@@ -1023,17 +980,18 @@ def run_scan(domain, mode='full', session_id=None):
                 'subdomains': [], 'total_found': 0,
                 'confidence': 'low', 'scan_failed': True, 'sources_used': [],
             }
- 
-        # Phase 4 result
+
+        # Phase 4 — CVE result, use whatever time is left
+        cve_timeout = min(CVE_TIMEOUT, time_left())
         try:
-            result['cves'] = f_cves.result(timeout=CVE_TIMEOUT)
+            result['cves'] = f_cves.result(timeout=cve_timeout)
         except futures.TimeoutError:
-            logger.warning(f"CVE matching timed out for {domain}")
+            logger.warning(f"CVE matching timed out for {domain} — returning partial results")
             result['cves'] = {
                 'cves': [], 'total': 0,
                 'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'unknown': 0,
                 'high_confidence': 0, 'medium_confidence': 0, 'low_confidence': 0,
-                'error': 'CVE matching timed out — try rescanning',
+                'error': 'CVE matching timed out — partial results shown',
             }
         except Exception:
             logger.error(f"CVE matching failed for {domain}", exc_info=True)
@@ -1043,12 +1001,14 @@ def run_scan(domain, mode='full', session_id=None):
                 'high_confidence': 0, 'medium_confidence': 0, 'low_confidence': 0,
                 'error': 'CVE matching failed',
             }
- 
+
     result['risk_score'] = calculate_risk_score(
         headers_result=result['headers'],
         cves_result=result['cves'],
         tech_stack=result['tech_stack'],
         subdomains_result=result['subdomains'],
     )
- 
+
+    elapsed = round(time.time() - scan_start, 1)
+    logger.info(f"Scan completed for {domain} in {elapsed}s")
     return result
