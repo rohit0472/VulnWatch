@@ -1,23 +1,28 @@
 /**
  * scanner.js
  *
- * ROOT CAUSE OF THE BLANK SCREEN (now fixed in routes.py):
- *   The old route spawned a background thread and returned immediately
- *   with status='running' and NO result. fetch() received that empty
- *   page, swapped it in, and showed nothing. The actual scan result
- *   was written to MongoDB 20 seconds later with nobody watching.
+ * Flow
+ * ----
+ * 1. User submits the scan form.
+ * 2. JS POSTs to /scan — Flask inserts a DB record, fires a background
+ *    thread, and immediately returns a redirect to /scanning/<scan_id>.
+ *    fetch() follows the redirect and lands on the scanning page HTML.
+ *    We grab the scan_id from that URL and start polling.
  *
- * HOW IT WORKS NOW:
- *   routes.py runs the scan synchronously — it blocks until done.
- *   fetch() waits the full 20-40s, then receives a page with real results.
- *   The loader stays visible the entire time because the page never navigates.
- *   When fetch resolves we extract #resultsSection and swap it in.
+ * 3. Every 3 s we hit GET /status/<scan_id> (JSON).
+ *    • { status: "running" }   → keep spinning
+ *    • { status: "completed" } → redirect to /result/<scan_id>
+ *    • { status: "failed" }    → show error
+ *    • { status: "error" }     → show error
+ *
+ * This means the Flask worker is NEVER blocked — the browser does all
+ * the waiting, and Render never sees a slow request.
  */
 
 (function () {
     'use strict';
 
-    /* ── DOM refs ─────────────────────────────────────────────── */
+    /* ── DOM refs ──────────────────────────────────────────────── */
     var form          = document.getElementById('scanForm');
     var loader        = document.getElementById('loaderSection');
     var resultsDiv    = document.getElementById('resultsSection');
@@ -29,24 +34,24 @@
 
     if (!form) return;
 
-    /* ── Step config ──────────────────────────────────────────── */
+    /* ── Step config ───────────────────────────────────────────── */
     var steps = [
-        { label: 'Checking HTTPS & security headers…',         pill: 0 },
-        { label: 'Detecting tech stack…',                       pill: 1 },
-        { label: 'Discovering subdomains across 5 sources…',   pill: 2 },
-        { label: 'Matching CVEs against detected stack…',      pill: 3 },
+        { label: 'Checking HTTPS & security headers…',        pill: 0 },
+        { label: 'Detecting tech stack…',                      pill: 1 },
+        { label: 'Discovering subdomains across 5 sources…',  pill: 2 },
+        { label: 'Matching CVEs against detected stack…',     pill: 3 },
     ];
 
     var stepTimer     = null;
     var progressTimer = null;
+    var pollTimer     = null;
     var currentStep   = 0;
 
-    /* ── Loader ───────────────────────────────────────────────── */
+    /* ── Loader helpers ────────────────────────────────────────── */
     function showLoader() {
         loader.style.display = 'block';
         resultsDiv.innerHTML = '';
         currentStep          = 0;
-
         loader.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
         if (scanBtn) {
@@ -56,15 +61,14 @@
 
         applyStep(0);
 
-        // Cycle step pills every 8 seconds
+        // Cycle step pills every 8 s to give visual progress feedback
         stepTimer = setInterval(function () {
             currentStep = (currentStep + 1) % steps.length;
             applyStep(currentStep);
         }, 8000);
 
-        // Creep progress bar 0 → 90% over 35 seconds
-        // (leaves room to snap to 100% on completion)
-        animateProgress(0, 90, 35000);
+        // Creep progress bar 0 → 88 % over 80 s (leaves room to snap to 100%)
+        animateProgress(0, 88, 80000);
     }
 
     function applyStep(idx) {
@@ -86,13 +90,14 @@
             var pct     = from + range * Math.min(elapsed / durationMs, 1);
             if (progressFill) progressFill.style.width = pct + '%';
             if (elapsed >= durationMs) clearInterval(progressTimer);
-        }, 100);
+        }, 200);
     }
 
     function hideLoader(success) {
         clearInterval(stepTimer);
         clearInterval(progressTimer);
-        stepTimer = progressTimer = null;
+        clearInterval(pollTimer);
+        stepTimer = progressTimer = pollTimer = null;
 
         if (progressFill) progressFill.style.width = '100%';
 
@@ -116,17 +121,68 @@
         resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    /* ── Form submit ──────────────────────────────────────────── */
+    /* ── Polling ───────────────────────────────────────────────── */
+    function startPolling(scanId) {
+        var statusUrl = '/scanner/status/' + scanId;
+        var resultUrl = '/scanner/result/' + scanId;
+        var attempts  = 0;
+        var maxAttempts = 60; // 60 × 3 s = 3 min ceiling on the client
+
+        pollTimer = setInterval(function () {
+            attempts++;
+            if (attempts > maxAttempts) {
+                showError('Scan is taking longer than expected. ' +
+                          'Check History in a few minutes — your result will be saved there.');
+                return;
+            }
+
+            fetch(statusUrl, { credentials: 'same-origin' })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function (data) {
+                    if (data.status === 'running') {
+                        return; // keep polling
+                    }
+
+                    // Terminal states — stop the interval first
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+
+                    if (data.status === 'completed') {
+                        // Snap progress to 100%, then navigate to result page
+                        animateProgress(
+                            parseFloat(progressFill ? progressFill.style.width : 88),
+                            100,
+                            400
+                        );
+                        setTimeout(function () {
+                            window.location.href = resultUrl;
+                        }, 500);
+                    } else {
+                        // failed or error
+                        showError(data.message || 'Scan failed. Please try again.');
+                    }
+                })
+                .catch(function (err) {
+                    // Network blip — don't stop polling, just log
+                    console.warn('Poll error (will retry):', err);
+                });
+
+        }, 3000); // poll every 3 seconds
+    }
+
+    /* ── Form submit ───────────────────────────────────────────── */
     form.addEventListener('submit', function (e) {
-        e.preventDefault(); // stop browser navigation — loader must stay alive
+        e.preventDefault();
 
         var domain = domainInput ? domainInput.value.trim() : '';
         if (!domain) return;
 
-        // Build POST url from button's data-action (set by Jinja url_for)
         var postUrl = (scanBtn && scanBtn.dataset.action)
             ? scanBtn.dataset.action
-            : window.location.href;
+            : '/scan';
 
         showLoader();
 
@@ -134,39 +190,34 @@
             method:      'POST',
             body:        new FormData(form),
             credentials: 'same-origin',
+            redirect:    'follow',   // follow the redirect to /scanning/<id>
         })
         .then(function (response) {
-            // Flask may redirect on auth failure — detect that
-            if (response.redirected) {
+            // Auth failure → hard navigate
+            if (response.url && response.url.includes('/login')) {
                 window.location.href = response.url;
                 return null;
             }
-            if (!response.ok) {
-                throw new Error('Server error ' + response.status);
-            }
-            return response.text();
+            if (!response.ok) throw new Error('Server error ' + response.status);
+            return response.url; // final URL after redirect = /scanning/<scan_id>
         })
-        .then(function (html) {
-            if (!html) return; // handled redirect above
+        .then(function (finalUrl) {
+            if (!finalUrl) return;
 
-            var doc        = new DOMParser().parseFromString(html, 'text/html');
-            var newResults = doc.getElementById('resultsSection');
-
-            hideLoader(true);
-
-            if (newResults && newResults.innerHTML.trim()) {
-                resultsDiv.innerHTML = newResults.innerHTML;
-                resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            } else {
-                // resultsSection was empty — scan returned an error page
-                showError('Scan completed but no results were returned. Please try again.');
+            // Extract scan_id from the redirected URL  /scanning/<scan_id>
+            var match = finalUrl.match(/\/scanning\/([a-f0-9]{24})/);
+            if (!match) {
+                // Unexpected redirect — just navigate there
+                window.location.href = finalUrl;
+                return;
             }
+
+            var scanId = match[1];
+            startPolling(scanId);
         })
         .catch(function (err) {
-            console.error('Scan error:', err);
-            showError(
-                'Could not reach the server. Check your connection and try again.'
-            );
+            console.error('Scan submit error:', err);
+            showError('Could not reach the server. Check your connection and try again.');
         });
     });
 

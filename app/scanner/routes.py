@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template, request, flash, session, jsonify
 from flask_login import login_required, current_user
-from app.scanner.engine import run_scan
+from app.scanner.engine import run_scan, calculate_risk_score
 from app.db import scans_collection, audit_logs_collection
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import threading
 from flask import send_file
@@ -15,12 +15,15 @@ scanner_bp = Blueprint('scanner', __name__)
 
 
 def _run_scan_background(domain, scan_id, session_id):
-    """Runs in a daemon thread — never blocks Flask."""
+    """
+    Runs the full scan in a daemon thread — never blocks Flask.
+    Writes the result (or failure) back to MongoDB when done.
+    """
     try:
         result = run_scan(domain, mode='full', session_id=session_id)
     except Exception:
         logger.error(f"run_scan raised for {domain}", exc_info=True)
-        result = {'error': 'Scan failed due to an internal error. Please try again.'}
+        result = None
 
     if result and not result.get('error'):
         scans_collection.update_one(
@@ -46,8 +49,6 @@ def _run_scan_background(domain, scan_id, session_id):
 @login_required
 def scan():
     prefill_domain = request.args.get('domain', '')
-    result         = None
-    scan_id        = None
 
     if request.method == 'POST':
         domain = request.form.get('domain', '').strip()
@@ -67,36 +68,19 @@ def scan():
         })
         scan_id = str(insert_result.inserted_id)
 
-        try:
-            result = run_scan(domain, mode='full', session_id=session_id)
-        except Exception:
-            logger.error(f"run_scan raised for {domain}", exc_info=True)
-            result = {'error': 'Scan failed due to an internal error. Please try again.'}
+        # Fire the scan in a background daemon thread — returns immediately.
+        t = threading.Thread(
+            target=_run_scan_background,
+            args=(domain, scan_id, session_id),
+            daemon=True,
+            name=f"scan-{scan_id[:8]}",
+        )
+        t.start()
 
-        if result and not result.get('error'):
-            scans_collection.update_one(
-                {'_id': ObjectId(scan_id)},
-                {'$set': {
-                    'status':     'completed',
-                    'headers':    result.get('headers'),
-                    'tech_stack': result.get('tech_stack'),
-                    'subdomains': result.get('subdomains'),
-                    'cves':       result.get('cves'),
-                    'risk_score': result.get('risk_score'),
-                    'scanned_at': datetime.utcnow(),
-                }}
-            )
-            result['input_domain'] = domain
-        else:
-            scans_collection.update_one(
-                {'_id': ObjectId(scan_id)},
-                {'$set': {'status': 'failed', 'scanned_at': datetime.utcnow()}}
-            )
-
-        return render_template('scanner/scan.html',
-                               result=result,
-                               scan_id=scan_id,
-                               prefill_domain=domain)
+        # Redirect to the polling page — browser polls /status/<scan_id>
+        # every 3 seconds until the background thread finishes.
+        return redirect(url_for('scanner.scan_status_page',
+                                scan_id=scan_id, domain=domain))
 
     return render_template('scanner/scan.html',
                            result=None,
@@ -107,7 +91,7 @@ def scan():
 @scanner_bp.route('/scanning/<scan_id>')
 @login_required
 def scan_status_page(scan_id):
-    """Shows a 'scanning...' page that polls /status/<scan_id> every 3s."""
+    """Shows a 'scanning…' page that polls /status/<scan_id> every 3 s."""
     domain = request.args.get('domain', '')
     return render_template('scanner/scanning.html', scan_id=scan_id, domain=domain)
 
@@ -115,7 +99,7 @@ def scan_status_page(scan_id):
 @scanner_bp.route('/status/<scan_id>')
 @login_required
 def scan_status(scan_id):
-    """JSON polling endpoint — called by the scanning page every 3s."""
+    """JSON polling endpoint — called by the scanning page every 3 s."""
     try:
         scan = scans_collection.find_one(
             {'_id': ObjectId(scan_id), 'user_id': str(current_user.id)},
@@ -135,13 +119,14 @@ def scan_status(scan_id):
                             'message': 'Scan failed. Please try again.'})
 
         # completed — send back full result
-        scan['_id'] = str(scan['_id'])
+        scan['_id']          = str(scan['_id'])
         scan['input_domain'] = scan.get('domain', '')
         return jsonify({'status': 'completed', 'result': scan})
 
     except Exception:
         logger.error(f"scan_status failed for {scan_id}", exc_info=True)
-        return jsonify({'status': 'error', 'message': 'Could not fetch scan status'}), 500
+        return jsonify({'status': 'error',
+                        'message': 'Could not fetch scan status'}), 500
 
 
 @scanner_bp.route('/result/<scan_id>')
@@ -155,7 +140,7 @@ def scan_result(scan_id):
         })
         if not scan:
             flash('Scan not found.', 'danger')
-            return redirect(url_for('scanner.scan', prefill_domain=''))
+            return redirect(url_for('scanner.scan'))
 
         scan['_id']          = str(scan['_id'])
         scan['input_domain'] = scan.get('domain', '')
@@ -182,7 +167,6 @@ def history():
             }
         ).sort('scanned_at', -1).limit(20))
 
-        from datetime import timedelta
         IST = timedelta(hours=5, minutes=30)
 
         for scan in scans:
@@ -205,9 +189,10 @@ def history():
             headers = scan.get('headers') or {}
             scan['grade'] = headers.get('header_grade', 'N/A')
 
-            cves_data = scan.get('cves') or {}
-            all_cves  = cves_data.get('cves', [])
-            scan['exploit_count'] = sum(1 for c in all_cves if c.get('exploit_available'))
+            all_cves = cves.get('cves', [])
+            scan['exploit_count'] = sum(
+                1 for c in all_cves if c.get('exploit_available')
+            )
 
     except Exception:
         logger.error("Failed to fetch scan history", exc_info=True)
@@ -229,10 +214,16 @@ def download_report(scan_id):
             flash('Scan not found.', 'danger')
             return redirect(url_for('scanner.history'))
 
+        # Guard: scan still running
+        if scan.get('status') == 'running':
+            flash('Scan is still in progress. Please wait and try again.', 'warning')
+            return redirect(url_for('scanner.scan_status_page',
+                                    scan_id=scan_id,
+                                    domain=scan.get('domain', '')))
+
         from app.reports.generator import generate_report
 
         if not scan.get('risk_score') and scan.get('headers'):
-            from app.scanner.engine import calculate_risk_score
             scan['risk_score'] = calculate_risk_score(
                 headers_result=scan['headers'],
                 cves_result=scan.get('cves'),

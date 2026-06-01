@@ -28,6 +28,7 @@ monitored_domains_collection = db['monitored_domains']
 alerts_collection = db['alerts']
 audit_logs_collection = db['audit_logs']
 api_keys_collection = db['api_keys']
+nvd_cache_collection = db['nvd_cache']
 
 # Create indexes for performance and security
 def create_indexes():
@@ -57,6 +58,13 @@ def create_indexes():
         # API keys
         api_keys_collection.create_index('key', unique=True)
         api_keys_collection.create_index('user_id')
+
+        # NVD cache 
+        nvd_cache_collection.create_index('key', unique=True)
+        nvd_cache_collection.create_index(
+            'expires_at',
+            expireAfterSeconds=0  
+        )
 
         logger.info("✅ Database indexes created successfully")
     except Exception as e:

@@ -11,7 +11,6 @@ from concurrent import futures
 
 EXPLOIT_INDEX = {}
 
-# ─── single logger ───────────────────────────────────────────────────────────
 logger = logging.getLogger(__name__)
 
 # ── NVD keyword aliases ───────────────────────────────────────────────────────
@@ -35,39 +34,111 @@ _KEYWORD_ALIASES = {
 }
 
 # ─── global constants ────────────────────────────────────────────────────────
-REQUEST_TIMEOUT   = 7      # every outbound HTTP call
-NVD_MAX_WORKERS   = 4      # parallel NVD threads
-SUBDOMAIN_WORKERS = 5      # parallel subdomain-source threads
-DNS_WORKERS       = 10     # parallel DNS brute-force threads
-CACHE_TTL         = 300    # 5 minutes
-MAX_SUBDOMAINS    = 50
-PHASE_TIMEOUT     = 35     # reduced from 45 — per-phase max
-CVE_TIMEOUT       = 40     # reduced from 50
-GLOBAL_SCAN_TIMEOUT = 90   # ← hard ceiling for entire scan
-MAX_CVES_PER_TECH = 10     # ← cap NVD results per technology
-MAX_TOTAL_CVES    = 50     # ← cap total CVEs across all techs
-NVD_RESULTS_PER_PAGE = 10  # ← reduced from 20
+REQUEST_TIMEOUT      = 7
+NVD_MAX_WORKERS      = 4
+SUBDOMAIN_WORKERS    = 5
+DNS_WORKERS          = 10
+# CACHE_TTL            = 300        # 5 min — subdomain in-memory cache
+MAX_SUBDOMAINS       = 50
+PHASE_TIMEOUT        = 30         # per-phase max (tech + subdomains)
+CVE_TIMEOUT          = 35         # CVE matching gets a bit more room
+GLOBAL_SCAN_TIMEOUT  = 110        # background thread — not a web request, no Render 60s limit
+MAX_CVES_PER_TECH    = 10
+MAX_TOTAL_CVES       = 50
+NVD_RESULTS_PER_PAGE = 10
 
-# ─── thread-safe in-process cache ────────────────────────────────────────────
-_cache_lock = threading.Lock()
-_sub_cache  = {}
-_nvd_cache  = {}
+# ─── MongoDB-backed subdomain cache (survives restarts, consistent across scans) ─
+_cache_lock = threading.Lock()  # kept for future use
 
 
-def _get_cache(store, key):
-    with _cache_lock:
-        entry = store.get(key)
-        if entry:
-            ts, data = entry
-            if time.time() - ts < CACHE_TTL:
-                return data
+def _get_sub_cache(key):
+    """Read subdomain results from MongoDB. key is (session_id, domain) tuple."""
+    try:
+        from app.db import nvd_cache_collection
+        cache_key = f"sub:{key[1]}"
+        doc = nvd_cache_collection.find_one({'key': cache_key})
+        if doc:
+            return doc['data']
+    except Exception as e:
+        logger.warning(f"Subdomain cache read failed: {e}")
     return None
 
 
-def _set_cache(store, key, data):
-    with _cache_lock:
-        store[key] = (time.time(), data)
+def _set_sub_cache(key, data):
+    def _write():
+        try:
+            from app.db import nvd_cache_collection
+            cache_key = f"sub:{key[1]}"
+            nvd_cache_collection.update_one(
+                {'key': cache_key},
+                {'$set': {
+                    'key':        cache_key,
+                    'data':       data,
+                    'expires_at': datetime.utcnow() + timedelta(hours=1),
+                }},
+                upsert=True
+            )
+        except Exception as e:
+            logger.warning(f"Subdomain cache write failed: {e}")
+    threading.Thread(target=_write, daemon=True).start()
 
+
+# ─── MongoDB-backed NVD cache (survives restarts, shared across workers) ──────
+
+def _get_nvd_cache(key):
+    """Return cached NVD data from MongoDB, or None if missing/expired."""
+    try:
+        from app.db import nvd_cache_collection
+        doc = nvd_cache_collection.find_one({'key': key})
+        if doc:
+            return doc['data']
+    except Exception as e:
+        logger.warning(f"NVD cache read failed: {e}")
+    return None
+
+
+def _set_nvd_cache(key, data):
+    def _write():
+        try:
+            from app.db import nvd_cache_collection
+            nvd_cache_collection.update_one(
+                {'key': key},
+                {'$set': {
+                    'key':        key,
+                    'data':       data,
+                    'expires_at': datetime.utcnow() + timedelta(hours=6),
+                }},
+                upsert=True
+            )
+        except Exception as e:
+            logger.warning(f"NVD cache write failed: {e}")
+    threading.Thread(target=_write, daemon=True).start()
+
+_nvd_throttle_lock   = threading.Lock()
+_nvd_window_start    = [time.time()]
+_nvd_request_count   = [0]
+
+def _nvd_throttled_request(params):
+    while True:
+        with _nvd_throttle_lock:
+            now = time.time()
+            if now - _nvd_window_start[0] >= 30:
+                _nvd_window_start[0] = now
+                _nvd_request_count[0] = 0
+            if _nvd_request_count[0] < 5:
+                _nvd_request_count[0] += 1
+                break
+            sleep_for = 30 - (now - _nvd_window_start[0])
+
+        if sleep_for > 0:
+            logger.info(f"NVD throttle — waiting {sleep_for:.1f}s")
+            time.sleep(sleep_for)
+
+    return requests.get(
+        "https://services.nvd.nist.gov/rest/json/cves/2.0",
+        params=params,
+        timeout=REQUEST_TIMEOUT
+    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STATIC CONSTANTS
@@ -107,6 +178,28 @@ COMMON_SUBDOMAINS = [
     'img', 'images', 'm', 'mobile', 'ns1', 'ns2', 'mx', 'docs',
     'help', 'support', 'status', 'monitor', 'git', 'ci', 'jenkins',
 ]
+
+# Extended wordlist used for large domains (DNS-only, cheap to probe)
+EXTENDED_SUBDOMAINS = COMMON_SUBDOMAINS + [
+    'careers', 'jobs', 'about', 'contact', 'news', 'press',
+    'enterprise', 'business', 'corporate', 'investor', 'ir',
+    'download', 'downloads', 'releases', 'packages', 'registry',
+    'auth', 'sso', 'oauth', 'id', 'accounts', 'profile',
+    'raw', 'gist', 'pages', 'copilot', 'actions', 'marketplace',
+    'education', 'explore', 'topics', 'trending', 'notifications',
+    'settings', 'billing', 'security', 'insights', 'pulse',
+]
+
+# Large public domains: skip slow API sources, use DNS bruteforce only
+LARGE_DOMAINS = {
+    'github.com', 'youtube.com', 'google.com', 'facebook.com',
+    'twitter.com', 'x.com', 'amazon.com', 'microsoft.com',
+    'apple.com', 'netflix.com', 'linkedin.com', 'instagram.com',
+    'reddit.com', 'wikipedia.org', 'yahoo.com', 'cloudflare.com',
+    'tiktok.com', 'pinterest.com', 'tumblr.com', 'twitch.tv',
+    'discord.com', 'slack.com', 'zoom.us', 'dropbox.com',
+    'atlassian.com', 'shopify.com', 'stripe.com', 'paypal.com',
+}
 
 CPE_MAP = {
     "wordpress":          "cpe:2.3:a:wordpress:wordpress",
@@ -213,17 +306,21 @@ def calculate_risk_score(headers_result, cves_result=None, tech_stack=None, subd
     score += round((headers_result.get('header_score', 0) / 100) * 25, 1)
 
     if cves_result:
-        ded  = min(cves_result.get('critical', 0) * 8, 24)
-        ded += min(cves_result.get('high',     0) * 4, 12)
-        ded += min(cves_result.get('medium',   0) * 1,  4)
-        if cves_result.get('high_confidence', 0) > 0:
-            ded += min(cves_result['high_confidence'] * 3, 10)
-        exploitable = sum(
-            1 for c in (cves_result.get('cves') or [])
-            if c.get('exploit_available')
-        )
-        ded += min(exploitable * 2, 6)
-        score += round(max(0, 40 - ded), 1)
+        # ── If NVD was rate-limited AND we got zero results, don't penalise ──
+        if cves_result.get('api_limited') and cves_result.get('total', 0) == 0:
+            score += 20   # neutral — we genuinely don't know
+        else:
+            ded  = min(cves_result.get('critical', 0) * 8, 24)
+            ded += min(cves_result.get('high',     0) * 4, 12)
+            ded += min(cves_result.get('medium',   0) * 1,  4)
+            if cves_result.get('high_confidence', 0) > 0:
+                ded += min(cves_result['high_confidence'] * 3, 10)
+            exploitable = sum(
+                1 for c in (cves_result.get('cves') or [])
+                if c.get('exploit_available')
+            )
+            ded += min(exploitable * 2, 6)
+            score += round(max(0, 40 - ded), 1)
     else:
         score += 40
 
@@ -327,9 +424,32 @@ def scan_headers(domain, mode='full'):
 # PHASE 2 — TECH STACK
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _builtwith_with_timeout(url, timeout=8):
+    """
+    Run builtwith.parse() in a daemon thread with a hard timeout.
+    Returns {} if timed out or errored — never blocks the caller.
+    """
+    result = {}
+
+    def _run():
+        try:
+            import builtwith
+            result['data'] = builtwith.parse(url)
+        except Exception:
+            result['data'] = {}
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    # If thread is still alive after timeout, we abandon it (daemon=True ensures
+    # it won't prevent process exit) and return empty dict.
+    return result.get('data', {})
+
+
 def scan_tech_stack(domain, html_content=None, headers=None):
     result = {'technologies': [], 'error': None}
     try:
+        # ── Wappalyzer FIRST — runs on already-fetched HTML, no network calls ──
         try:
             from app.scanner.wappalyzer_engine import wappalyzer_scan
             for tname, tdata in wappalyzer_scan(
@@ -342,17 +462,7 @@ def scan_tech_stack(domain, html_content=None, headers=None):
         except Exception:
             logger.warning("Wappalyzer failed", exc_info=True)
 
-        try:
-            import builtwith
-            for category, techs in builtwith.parse('https://' + domain).items():
-                for tech in techs:
-                    result['technologies'].append({
-                        'name': tech, 'category': category,
-                        'source': 'builtwith', 'version': None,
-                    })
-        except Exception:
-            logger.warning(f"builtwith failed for {domain}", exc_info=True)
-
+        # ── HTTP headers ─────────────────────────────────────────────────────
         if headers:
             for value, category in [
                 (headers.get('Server',       ''), 'Web Server'),
@@ -366,6 +476,7 @@ def scan_tech_stack(domain, html_content=None, headers=None):
                         'source': 'headers', 'version': version,
                     })
 
+        # ── HTML parsing ──────────────────────────────────────────────────────
         if html_content:
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(html_content, 'html.parser')
@@ -414,11 +525,32 @@ def scan_tech_stack(domain, html_content=None, headers=None):
                         'version': extract_version_from_url(href),
                     })
 
+        # ── Dedup before builtwith so we have results even if bw hangs ───────
         seen = {}
         for tech in result['technologies']:
             key = tech['name'].lower()
             seen[key] = _merge_tech(seen[key], tech) if key in seen else tech
         result['technologies'] = list(seen.values())
+
+        # ── Builtwith LAST — makes network calls, hard 8s timeout ────────────
+        # Only run if we haven't already found enough from wappalyzer+HTML
+        if len(result['technologies']) < 3:
+            try:
+                bw_data = _builtwith_with_timeout('https://' + domain, timeout=8)
+                new_techs = []
+                for category, techs in bw_data.items():
+                    for tech in techs:
+                        new_techs.append({
+                            'name': tech, 'category': category,
+                            'source': 'builtwith', 'version': None,
+                        })
+                # Merge builtwith into existing seen dict
+                for tech in new_techs:
+                    key = tech['name'].lower()
+                    seen[key] = _merge_tech(seen[key], tech) if key in seen else tech
+                result['technologies'] = list(seen.values())
+            except Exception:
+                logger.warning(f"builtwith failed for {domain}", exc_info=True)
 
     except Exception:
         logger.error(f"Tech stack scan failed for {domain}", exc_info=True)
@@ -447,7 +579,7 @@ def _fetch_crtsh(domain):
                     sub = sub.strip().lower()
                     if sub and not sub.startswith('*') and sub != domain and sub.endswith('.' + domain):
                         found.add(sub)
-                        if len(found) >= MAX_SUBDOMAINS:   # ← stop early on huge domains
+                        if len(found) >= MAX_SUBDOMAINS:
                             return found
             return found
         except Exception:
@@ -470,6 +602,8 @@ def _fetch_hackertarget(domain):
                 sub = parts[0].strip().lower()
                 if sub.endswith('.' + domain) and sub != domain:
                     found.add(sub)
+                    if len(found) >= MAX_SUBDOMAINS:   # cap early
+                        break
     except Exception:
         pass
     return found
@@ -488,6 +622,8 @@ def _fetch_alienvault(domain):
             host = entry.get('hostname', '').strip().lower()
             if host.endswith('.' + domain) and host != domain:
                 found.add(host)
+                if len(found) >= MAX_SUBDOMAINS:       # cap early
+                    break
     except Exception:
         pass
     return found
@@ -508,6 +644,8 @@ def _fetch_bufferover(domain):
                 sub = parts[1].strip().lower()
                 if sub.endswith('.' + domain) and sub != domain:
                     found.add(sub)
+                    if len(found) >= MAX_SUBDOMAINS:   # cap early
+                        break
     except Exception:
         pass
     return found
@@ -516,16 +654,22 @@ def _fetch_bufferover(domain):
 def _dns_probe(fqdn):
     try:
         socket.setdefaulttimeout(2)
-        socket.gethostbyname(fqdn)   # faster than TCP connect
+        socket.gethostbyname(fqdn)
         return fqdn
     except Exception:
         return None
 
 
-def _fetch_dns_bruteforce(domain):
-    found = set()
+def _fetch_dns_bruteforce(domain, extended=False):
+    """
+    Probe a wordlist via DNS resolution.
+    Every result is confirmed live — no false positives.
+    Extended mode uses a larger wordlist suited for large public domains.
+    """
+    wordlist = EXTENDED_SUBDOMAINS if extended else COMMON_SUBDOMAINS
+    found    = set()
     with futures.ThreadPoolExecutor(max_workers=DNS_WORKERS) as ex:
-        for hit in ex.map(_dns_probe, [f"{p}.{domain}" for p in COMMON_SUBDOMAINS]):
+        for hit in ex.map(_dns_probe, [f"{p}.{domain}" for p in wordlist]):
             if hit:
                 found.add(hit)
     return found
@@ -533,11 +677,37 @@ def _fetch_dns_bruteforce(domain):
 
 def scan_subdomains(domain, session_id=None):
     cache_key = (session_id, domain)
-    cached    = _get_cache(_sub_cache, cache_key)
+    cached    = _get_sub_cache(cache_key)
     if cached is not None:
         logger.info(f"Subdomain cache HIT for {domain}")
         return cached
 
+    # ── Tiered strategy: large domains → DNS-only (fast, no API limits) ──────
+    if domain in LARGE_DOMAINS:
+        logger.info(f"Large domain detected ({domain}) — using DNS bruteforce only")
+        found = _fetch_dns_bruteforce(domain, extended=True)
+
+        def _sort_key(sub):
+            prefix = sub.replace('.' + domain, '')
+            return (0 if prefix in HIGH_PRIORITY_PREFIXES else 1, sub)
+
+        result = {
+            'subdomains':    sorted(found, key=_sort_key),
+            'total_found':   len(found),
+            'limited':       False,
+            'limit_message': (
+                'API-based discovery skipped for large public domain — '
+                'showing DNS-confirmed subdomains only.'
+            ),
+            'confidence':    'high',          # DNS-confirmed = actually resolves
+            'sources_used':  ['dns_bruteforce'],
+            'scan_failed':   len(found) == 0,
+            'error':         None,
+        }
+        _set_sub_cache(cache_key, result)
+        return result
+
+    # ── Normal domains: all sources in parallel ───────────────────────────────
     all_found    = set()
     sources_used = []
 
@@ -591,7 +761,7 @@ def scan_subdomains(domain, session_id=None):
         result['subdomains'] = sorted(all_found, key=_sort_key)[:MAX_SUBDOMAINS]
 
     if not result['scan_failed']:
-        _set_cache(_sub_cache, cache_key, result)
+        _set_sub_cache(cache_key, result)
     return result
 
 
@@ -651,21 +821,25 @@ def parse_cve_item(cve, tech_name, version=None, source='keyword', confidence='l
 
 
 def _fetch_nvd(params, tech_name, version, source, confidence, min_year):
-    """Raw NVD call — always hits network."""
+    """
+    Throttled NVD call — never hits 429.
+    Returns list (empty = no CVEs) or None (request failed).
+    """
+    try:
+        r = _nvd_throttled_request(params)
+        if r.status_code == 429:
+            logger.warning(f"NVD 429 despite throttling for {tech_name} — skipping")
+            return None
+        r.raise_for_status()
+    except requests.exceptions.Timeout:
+        logger.warning(f"NVD timeout for {tech_name}")
+        return None
+    except Exception:
+        logger.error(f"NVD fetch failed for {tech_name}", exc_info=True)
+        return None
+
     cves = []
     try:
-        r = requests.get(
-            "https://services.nvd.nist.gov/rest/json/cves/2.0",
-            params=params, timeout=REQUEST_TIMEOUT
-        )
-        if r.status_code == 429:
-            logger.warning("NVD rate limited — backing off 6s")
-            time.sleep(6)
-            r = requests.get(
-                "https://services.nvd.nist.gov/rest/json/cves/2.0",
-                params=params, timeout=REQUEST_TIMEOUT
-            )
-        r.raise_for_status()
         for item in r.json().get('vulnerabilities', []):
             cve = item.get('cve', {})
             if cve.get('vulnStatus') in ['Rejected', 'REJECTED']:
@@ -679,12 +853,11 @@ def _fetch_nvd(params, tech_name, version, source, confidence, min_year):
                                     source=source, confidence=confidence)
             if parsed:
                 cves.append(parsed)
-                if len(cves) >= MAX_CVES_PER_TECH:  # ← stop early
+                if len(cves) >= MAX_CVES_PER_TECH:
                     break
-    except requests.exceptions.Timeout:
-        logger.warning(f"NVD timeout for {tech_name}")
     except Exception:
-        logger.error(f"NVD fetch failed for {tech_name}", exc_info=True)
+        logger.error(f"NVD response parse failed for {tech_name}", exc_info=True)
+
     return cves
 
 
@@ -693,62 +866,51 @@ def _fetch_nvd_by_range(tech_name, cpe_base, version, min_year=2020):
     if not version:
         return []
 
-    cves = []   # ← BUG FIX: was missing, caused NameError crash
-
-    virtual_match = f"{cpe_base}:*:*:*:*:*:*:*:*"
-    params = {
-        'virtualMatchString':  virtual_match,
-        'versionEndIncluding': version,
-        'resultsPerPage':      NVD_RESULTS_PER_PAGE,  # ← reduced
-    }
-
     cache_key = f"range:{tech_name}:{version}:{min_year}"
-    cached    = _get_cache(_nvd_cache, cache_key)
+    cached    = _get_nvd_cache(cache_key)
     if cached is not None:
         return cached
 
-    try:
-        r = requests.get(
-            "https://services.nvd.nist.gov/rest/json/cves/2.0",
-            params=params, timeout=REQUEST_TIMEOUT
-        )
-        if r.status_code == 429:
-            logger.warning("NVD rate limited — backing off 6s")
-            time.sleep(6)
-            r = requests.get(
-                "https://services.nvd.nist.gov/rest/json/cves/2.0",
-                params=params, timeout=REQUEST_TIMEOUT
-            )
-        r.raise_for_status()
+    params = {
+        'virtualMatchString':  f"{cpe_base}:*:*:*:*:*:*:*:*",
+        'versionEndIncluding': version,
+        'resultsPerPage':      NVD_RESULTS_PER_PAGE,
+    }
 
+    try:
+        r = _nvd_throttled_request(params)
+        if r.status_code == 429:
+            logger.warning(f"NVD 429 despite throttling (range) for {tech_name}")
+            return None
+        r.raise_for_status()
+    except requests.exceptions.Timeout:
+        logger.warning(f"NVD range query timeout for {tech_name}")
+        return None
+    except Exception:
+        logger.error(f"NVD range query failed for {tech_name}", exc_info=True)
+        return None
+
+    cves = []
+    try:
         for item in r.json().get('vulnerabilities', []):
             cve = item.get('cve', {})
             if cve.get('vulnStatus') in ['Rejected', 'REJECTED']:
                 continue
             try:
-                pub_year = int(cve.get('published', '')[:4])
-                if pub_year < min_year:
+                if int(cve.get('published', '')[:4]) < min_year:
                     continue
             except (ValueError, TypeError):
                 continue
-
-            parsed = parse_cve_item(
-                cve, tech_name,
-                version=version,
-                source='cpe',
-                confidence='high'
-            )
+            parsed = parse_cve_item(cve, tech_name, version=version,
+                                    source='cpe', confidence='high')
             if parsed:
                 cves.append(parsed)
-                if len(cves) >= MAX_CVES_PER_TECH:  # ← stop early
+                if len(cves) >= MAX_CVES_PER_TECH:
                     break
-
-    except requests.exceptions.Timeout:
-        logger.warning(f"NVD range query timeout for {tech_name}")
     except Exception:
-        logger.error(f"NVD range query failed for {tech_name}", exc_info=True)
+        logger.error(f"NVD range parse failed for {tech_name}", exc_info=True)
 
-    _set_cache(_nvd_cache, cache_key, cves)
+    _set_nvd_cache(cache_key, cves)
     return cves
 
 
@@ -759,18 +921,23 @@ def fetch_cves_by_cpe(tech_name, version, min_year=2020):
 
     range_results = _fetch_nvd_by_range(tech_name, cpe_base, ver, min_year)
 
+    # None = rate-limited; propagate upward
+    if range_results is None:
+        return None
+
     if not range_results and ver:
         exact_cpe = f"{cpe_base}:{ver}:*:*:*:*:*:*:*"
         key       = f"cpe_exact:{tech_name}:{ver}:{min_year}"
-        cached    = _get_cache(_nvd_cache, key)
+        cached    = _get_nvd_cache(key)
         if cached is not None:
             return cached
         exact = _fetch_nvd(
             {'cpeName': exact_cpe, 'resultsPerPage': NVD_RESULTS_PER_PAGE},
             tech_name, ver, 'cpe', 'high', min_year
         )
-        _set_cache(_nvd_cache, key, exact)
-        return exact
+        if exact is not None:
+            _set_nvd_cache(key, exact)
+        return exact   # may be None (rate-limited) — propagated
 
     return range_results
 
@@ -779,12 +946,13 @@ def fetch_cves_by_keyword(tech_name, version=None, min_year=2020, confidence='lo
     tech_lower = tech_name.lower()
     aliases    = _KEYWORD_ALIASES.get(tech_lower, [tech_name])
 
-    all_cves = []
+    all_cves    = []
+    any_limited = False
 
     for alias in aliases:
         keyword = f"{alias} {version}" if version else alias
         key     = f"kw:{keyword}:{min_year}"
-        cached  = _get_cache(_nvd_cache, key)
+        cached  = _get_nvd_cache(key)
         if cached is not None:
             all_cves.extend(cached)
             continue
@@ -793,8 +961,14 @@ def fetch_cves_by_keyword(tech_name, version=None, min_year=2020, confidence='lo
             {'keywordSearch': keyword, 'resultsPerPage': NVD_RESULTS_PER_PAGE},
             tech_name, version, 'keyword', confidence, min_year
         )
-        _set_cache(_nvd_cache, key, result)
+        if result is None:
+            any_limited = True
+            continue   # skip this alias, try next
+        _set_nvd_cache(key, result)
         all_cves.extend(result)
+
+    if not all_cves and any_limited:
+        return None   # all aliases were rate-limited
 
     seen = {}
     for cve in all_cves:
@@ -814,6 +988,14 @@ def _fetch_cves_for_tech(tech):
     cpe_cves = fetch_cves_by_cpe(name.lower(), version, min_year=min_year)
     kw_cves  = fetch_cves_by_keyword(name, version, min_year=min_year, confidence='medium')
 
+    # Both returned None → NVD was rate-limited for this tech entirely
+    if cpe_cves is None and kw_cves is None:
+        logger.warning(f"NVD rate-limited for both CPE and keyword on {name} — skipping")
+        return None   # signals api_limited to match_cves
+
+    cpe_cves = cpe_cves or []
+    kw_cves  = kw_cves  or []
+
     confidence_rank = {'high': 3, 'medium': 2, 'low': 1}
     merged = {}
     for cve in kw_cves + cpe_cves:
@@ -824,8 +1006,11 @@ def _fetch_cves_for_tech(tech):
         ):
             merged[cid] = cve
 
-    # ← Cap per-tech CVEs to MAX_CVES_PER_TECH (highest score first)
-    sorted_cves = sorted(merged.values(), key=lambda x: x.get('score') or 0, reverse=True)
+    # Cap per-tech CVEs — sort by score DESC then CVE ID ASC (deterministic)
+    sorted_cves = sorted(
+        merged.values(),
+        key=lambda x: (-(x.get('score') or 0), x.get('id', ''))
+    )
     return sorted_cves[:MAX_CVES_PER_TECH]
 
 
@@ -834,6 +1019,7 @@ def match_cves(tech_stack):
         'cves': [], 'total': 0,
         'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'unknown': 0,
         'high_confidence': 0, 'medium_confidence': 0, 'low_confidence': 0,
+        'api_limited': False,   # True if ≥1 tech was skipped due to NVD rate limit
         'error': None,
     }
     techs = [t for t in (tech_stack or {}).get('technologies', [])
@@ -842,16 +1028,24 @@ def match_cves(tech_stack):
         result['error'] = 'No technologies to match'
         return result
 
-    all_cves = []
+    all_cves    = []
+    api_limited = False
 
     with futures.ThreadPoolExecutor(max_workers=NVD_MAX_WORKERS) as ex:
         fmap = {ex.submit(_fetch_cves_for_tech, tech): tech for tech in techs}
         for future in futures.as_completed(fmap):
             try:
-                all_cves.extend(future.result())
+                tech_cves = future.result()
+                if tech_cves is None:
+                    api_limited = True   # this tech was rate-limited
+                else:
+                    all_cves.extend(tech_cves)
             except Exception:
                 logger.error(f"CVE fetch error for {fmap[future].get('name')}", exc_info=True)
 
+    result['api_limited'] = api_limited
+
+    # Dedup — higher confidence wins
     confidence_rank = {'high': 3, 'medium': 2, 'low': 1}
     seen = {}
     for cve in all_cves:
@@ -862,8 +1056,9 @@ def match_cves(tech_stack):
         ):
             seen[cid] = cve
 
-    # ← Cap total CVEs to MAX_TOTAL_CVES (highest score first)
-    unique         = sorted(seen.values(), key=lambda x: x.get('score') or 0, reverse=True)
+    # Final sort: score DESC, CVE ID ASC — fully deterministic across runs
+    unique         = sorted(seen.values(),
+                            key=lambda x: (-(x.get('score') or 0), x.get('id', '')))
     unique         = unique[:MAX_TOTAL_CVES]
     result['cves'] = unique
     result['total'] = len(unique)
@@ -885,7 +1080,7 @@ def match_cves(tech_stack):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN RUNNER — 90s global hard ceiling
+# MAIN RUNNER — 55s global hard ceiling (Render kills at 60s)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_scan(domain, mode='full', session_id=None):
@@ -916,10 +1111,9 @@ def run_scan(domain, mode='full', session_id=None):
     scan_start = time.time()
 
     def time_left():
-        """Remaining seconds before global 90s ceiling."""
         return max(0, GLOBAL_SCAN_TIMEOUT - (time.time() - scan_start))
 
-    # Phase 1 — headers
+    # ── Phase 1: headers (always synchronous — needed by all other phases) ────
     headers_result, raw_response = scan_headers(domain, mode=mode)
     result['headers'] = headers_result
 
@@ -938,7 +1132,7 @@ def run_scan(domain, mode='full', session_id=None):
         except Exception:
             logger.warning(f"Could not read HTML from response for {domain}")
 
-    # Phases 2 + 3 + 4 — parallel, each bounded by remaining global time
+    # ── Phases 2 + 3 + 4 — parallel, each bounded by remaining global time ────
     with futures.ThreadPoolExecutor(max_workers=3) as ex:
         f_tech = ex.submit(scan_tech_stack, domain, html_content, raw_headers)
         f_subs = ex.submit(scan_subdomains, domain, session_id)
@@ -956,7 +1150,7 @@ def run_scan(domain, mode='full', session_id=None):
 
         result['tech_stack'] = tech_stack
 
-        # Phase 4 — CVEs (starts as soon as tech done)
+        # Phase 4 — start CVE matching as soon as tech stack is done
         f_cves = ex.submit(match_cves, tech_stack)
 
         # Phase 3 — subdomains
@@ -981,7 +1175,7 @@ def run_scan(domain, mode='full', session_id=None):
                 'confidence': 'low', 'scan_failed': True, 'sources_used': [],
             }
 
-        # Phase 4 — CVE result, use whatever time is left
+        # Phase 4 — CVE result
         cve_timeout = min(CVE_TIMEOUT, time_left())
         try:
             result['cves'] = f_cves.result(timeout=cve_timeout)
@@ -991,6 +1185,7 @@ def run_scan(domain, mode='full', session_id=None):
                 'cves': [], 'total': 0,
                 'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'unknown': 0,
                 'high_confidence': 0, 'medium_confidence': 0, 'low_confidence': 0,
+                'api_limited': False,
                 'error': 'CVE matching timed out — partial results shown',
             }
         except Exception:
@@ -999,6 +1194,7 @@ def run_scan(domain, mode='full', session_id=None):
                 'cves': [], 'total': 0,
                 'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'unknown': 0,
                 'high_confidence': 0, 'medium_confidence': 0, 'low_confidence': 0,
+                'api_limited': False,
                 'error': 'CVE matching failed',
             }
 

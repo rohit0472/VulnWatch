@@ -1,0 +1,295 @@
+{% extends 'base.html' %}
+{% block title %}Scanning {{ domain }} — VulnWatch{% endblock %}
+
+{% block extra_css %}
+<style>
+    .scan-spinner {
+        width: 72px; height: 72px;
+        border: 4px solid #21262d;
+        border-top-color: #58a6ff;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .step-pill {
+        display: inline-block;
+        padding: 4px 14px;
+        border-radius: 999px;
+        border: 1px solid #30363d;
+        background: #161b22;
+        color: #8b949e;
+        font-size: 0.82rem;
+        transition: color 0.3s, border-color 0.3s, background 0.3s;
+    }
+    .step-pill.active {
+        color: #58a6ff;
+        border-color: #58a6ff;
+        background: #1c2d3d;
+    }
+    .step-pill.done {
+        color: #3fb950;
+        border-color: #3fb950;
+        background: #1c3d2a;
+    }
+
+    #scanProgressBar {
+        height: 4px;
+        background: #21262d;
+        border-radius: 2px;
+        overflow: hidden;
+        max-width: 420px;
+        margin: 0 auto;
+    }
+    #scanProgressFill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #58a6ff, #3fb950);
+        border-radius: 2px;
+        transition: width 0.6s ease;
+    }
+
+    .domain-badge {
+        display: inline-block;
+        padding: 6px 16px;
+        border-radius: 999px;
+        border: 1px solid #30363d;
+        background: #0d1117;
+        color: #58a6ff;
+        font-family: monospace;
+        font-size: 1rem;
+        letter-spacing: 0.3px;
+    }
+
+    .tip-box {
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 12px 18px;
+        color: #8b949e;
+        font-size: 0.83rem;
+        max-width: 520px;
+        margin: 0 auto;
+    }
+
+    #errorBox { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2 class="mb-1">
+            <i class="fas fa-search me-2" style="color:#58a6ff;"></i>Domain Scanner
+        </h2>
+        <p class="text-secondary mb-0">Scan any domain for vulnerabilities and tech stack exposure</p>
+    </div>
+</div>
+
+<!-- Scanning card -->
+<div class="card mb-4" id="scanningCard">
+    <div class="card-body py-5 text-center">
+
+        <div class="scan-spinner mx-auto mb-4"></div>
+
+        <div class="mb-3">
+            <span class="domain-badge">
+                <i class="fas fa-globe me-2" style="color:#8b949e;"></i>{{ domain }}
+            </span>
+        </div>
+
+        <h5 id="loaderHeading" style="color:#c9d1d9;" class="mb-1">Initialising scan…</h5>
+        <small class="text-secondary d-block mb-4">
+            This takes 30–55 seconds — please don't close this tab.
+        </small>
+
+        <div id="scanProgressBar" class="mb-4">
+            <div id="scanProgressFill"></div>
+        </div>
+
+        <!-- Step pills -->
+        <div class="d-flex flex-wrap justify-content-center gap-2 mb-4">
+            <span class="step-pill" data-step="0">
+                <i class="fas fa-lock me-1"></i>Headers
+            </span>
+            <span class="step-pill" data-step="1">
+                <i class="fas fa-layer-group me-1"></i>Tech stack
+            </span>
+            <span class="step-pill" data-step="2">
+                <i class="fas fa-sitemap me-1"></i>Subdomains
+            </span>
+            <span class="step-pill" data-step="3">
+                <i class="fas fa-bug me-1"></i>CVEs
+            </span>
+        </div>
+
+        <!-- Tip -->
+        <div class="tip-box">
+            <i class="fas fa-lightbulb me-2" style="color:#d29922;"></i>
+            <span id="tipText">Checking HTTPS configuration and security headers…</span>
+        </div>
+
+    </div>
+</div>
+
+<!-- Error box (shown only if polling fails) -->
+<div id="errorBox">
+    <div class="alert alert-danger">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <span id="errorMsg">Scan failed. Please try again.</span>
+    </div>
+    <div class="text-center mt-3">
+        <a href="{{ url_for('scanner.scan') }}" class="btn btn-primary me-2">
+            <i class="fas fa-redo me-2"></i>Try Again
+        </a>
+        <a href="{{ url_for('scanner.history') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-history me-2"></i>View History
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    'use strict';
+
+    var SCAN_ID    = {{ scan_id | tojson }};
+    var STATUS_URL = {{ url_for('scanner.scan_status', scan_id=scan_id) | tojson }};
+    var RESULT_URL = {{ url_for('scanner.scan_result', scan_id=scan_id) | tojson }};
+
+    var heading      = document.getElementById('loaderHeading');
+    var progressFill = document.getElementById('scanProgressFill');
+    var tipText      = document.getElementById('tipText');
+    var scanningCard = document.getElementById('scanningCard');
+    var errorBox     = document.getElementById('errorBox');
+    var errorMsg     = document.getElementById('errorMsg');
+    var stepPills    = document.querySelectorAll('.step-pill');
+
+    /* ── Step config ─────────────────────────────────────────────── */
+    var steps = [
+        {
+            label: 'Checking HTTPS & security headers…',
+            tip:   'Checking HTTPS configuration and security headers…',
+            pill:  0
+        },
+        {
+            label: 'Detecting technology stack…',
+            tip:   'Running Wappalyzer fingerprinting and HTML analysis…',
+            pill:  1
+        },
+        {
+            label: 'Discovering subdomains…',
+            tip:   'Querying crt.sh, HackerTarget, AlienVault and running DNS brute-force…',
+            pill:  2
+        },
+        {
+            label: 'Matching CVEs against detected stack…',
+            tip:   'Querying NIST NVD for known vulnerabilities in detected technologies…',
+            pill:  3
+        },
+    ];
+
+    var currentStep   = 0;
+    var stepTimer     = null;
+    var progressTimer = null;
+    var pollTimer     = null;
+
+    /* ── Progress bar ────────────────────────────────────────────── */
+    function animateProgress(from, to, durationMs) {
+        clearInterval(progressTimer);
+        var start = performance.now();
+        var range = to - from;
+        progressTimer = setInterval(function () {
+            var elapsed = performance.now() - start;
+            var pct = from + range * Math.min(elapsed / durationMs, 1);
+            if (progressFill) progressFill.style.width = pct + '%';
+            if (elapsed >= durationMs) clearInterval(progressTimer);
+        }, 150);
+    }
+
+    /* ── Step pills ──────────────────────────────────────────────── */
+    function applyStep(idx) {
+        var step = steps[idx];
+        if (heading)  heading.textContent = step.label;
+        if (tipText)  tipText.textContent  = step.tip;
+
+        stepPills.forEach(function (pill) {
+            var n = parseInt(pill.dataset.step, 10);
+            pill.classList.remove('active', 'done');
+            if (n === step.pill)  pill.classList.add('active');
+            else if (n < step.pill) pill.classList.add('done');
+        });
+    }
+
+    /* ── Boot ────────────────────────────────────────────────────── */
+    applyStep(0);
+    // Creep 0 → 85% over 50s — leaves room to snap to 100% on completion
+    animateProgress(0, 85, 80000);
+
+    // Cycle step labels every 10s
+    stepTimer = setInterval(function () {
+        currentStep = Math.min(currentStep + 1, steps.length - 1);
+        applyStep(currentStep);
+    }, 10000);
+
+    /* ── Polling ─────────────────────────────────────────────────── */
+    var attempts    = 0;
+    var maxAttempts = 120;   // 80 × 3s = 4 min client ceiling
+
+    pollTimer = setInterval(function () {
+        attempts++;
+
+        if (attempts > maxAttempts) {
+            clearAll();
+            showError(
+                'Scan is taking longer than expected. ' +
+                'Your result will be saved — check History in a few minutes.'
+            );
+            return;
+        }
+
+        fetch(STATUS_URL, { credentials: 'same-origin' })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                if (data.status === 'running') return;   // keep spinning
+
+                clearAll();
+
+                if (data.status === 'completed') {
+                    // Snap to 100% then navigate
+                    if (progressFill) progressFill.style.width = '100%';
+                    setTimeout(function () {
+                        window.location.href = RESULT_URL;
+                    }, 500);
+                } else {
+                    showError(data.message || 'Scan failed. Please try again.');
+                }
+            })
+            .catch(function (err) {
+                // Network blip — keep polling, don't abort
+                console.warn('Poll error (will retry):', err);
+            });
+
+    }, 3000);
+
+    /* ── Helpers ─────────────────────────────────────────────────── */
+    function clearAll() {
+        clearInterval(stepTimer);
+        clearInterval(progressTimer);
+        clearInterval(pollTimer);
+        stepTimer = progressTimer = pollTimer = null;
+    }
+
+    function showError(msg) {
+        if (scanningCard) scanningCard.style.display = 'none';
+        if (errorMsg)     errorMsg.textContent = msg;
+        if (errorBox)     errorBox.style.display = 'block';
+    }
+
+}());
+</script>
+{% endblock %}
