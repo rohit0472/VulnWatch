@@ -1,107 +1,183 @@
 {% extends "base.html" %}
+{% block title %}Admin Panel — VulnWatch{% endblock %}
+{% block breadcrumb %}Admin · Control Panel{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-title {
+        font-family: var(--font-display); font-size: 22px; font-weight: 700;
+        color: var(--text-primary); letter-spacing: -0.3px;
+    }
+    .page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+    /* ─── STAT CARDS ─── */
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-bottom: 24px;
+    }
+    .stat-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: border-color 0.2s;
+    }
+    .stat-card:hover { border-color: var(--border-default); }
+    .stat-icon-wrap {
+        width: 44px; height: 44px; border-radius: var(--radius-md);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 17px; flex-shrink: 0;
+    }
+    .icon-blue   { background: rgba(0,212,255,0.1);  color: var(--accent-cyan); }
+    .icon-purple { background: rgba(167,139,250,0.1); color: var(--accent-purple); }
+    .icon-green  { background: rgba(0,229,160,0.1);  color: var(--accent-green); }
+    .stat-label { font-size: 11px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+    .stat-value { font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+    .stat-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; margin-top: 5px; }
+
+    /* ─── ACTION CARDS ─── */
+    .action-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 14px;
+    }
+    .action-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 22px;
+        display: flex;
+        flex-direction: column;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .action-card:hover {
+        border-color: var(--border-default);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    }
+    .action-card-icon {
+        width: 38px; height: 38px; border-radius: var(--radius-md);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 15px; margin-bottom: 14px;
+    }
+    .action-card-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+    .action-card-desc  { font-size: 12.5px; color: var(--text-muted); flex: 1; margin-bottom: 16px; line-height: 1.5; }
+
+    /* ─── MONITOR WIDGET ─── */
+    .monitor-widget {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+    }
+    .monitor-widget:hover { border-color: var(--border-default); }
+
+    @media (max-width: 768px) {
+        .stat-grid { grid-template-columns: 1fr 1fr; }
+        .action-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+        .stat-grid { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
 
-    <!-- Header -->
-    <div class="row mb-4 align-items-center">
-        <div class="col">
-            <h2 class="mb-1" style="color:#c9d1d9;">
-                <i class="fas fa-user-shield me-2" style="color:#58a6ff;"></i>
-                Admin Panel
-            </h2>
-            <p class="text-secondary mb-0">System control & management</p>
+<div style="margin-bottom: 24px;">
+    <div class="page-title">Admin Control Panel</div>
+    <div class="page-subtitle">System management &amp; oversight</div>
+</div>
+
+<!-- Stat Cards -->
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-icon-wrap icon-purple">
+            <i class="fas fa-users"></i>
+        </div>
+        <div>
+            <div class="stat-label">Total Users</div>
+            <div class="stat-value">{{ users_count }}</div>
         </div>
     </div>
 
-    <!-- Stats -->
-    <div class="row g-4 mb-4">
-
-        <div class="col-md-4">
-            <div class="card p-4">
-                <small class="text-secondary d-block mb-2">Total Users</small>
-                <h2 class="fw-bold" style="color:#c9d1d9;">{{ users_count }}</h2>
-            </div>
+    <div class="stat-card">
+        <div class="stat-icon-wrap icon-blue">
+            <i class="fas fa-search"></i>
         </div>
-
-        <div class="col-md-4">
-            <div class="card p-4">
-                <small class="text-secondary d-block mb-2">Total Scans</small>
-                <h2 class="fw-bold" style="color:#c9d1d9;">{{ scans_count }}</h2>
-            </div>
+        <div>
+            <div class="stat-label">Total Scans</div>
+            <div class="stat-value">{{ scans_count }}</div>
         </div>
-
-        <div class="col-md-4">
-            <div class="card p-4">
-                <small class="text-secondary d-block mb-2">System Status</small>
-                <h6 class="fw-semibold" style="color:#3fb950;">
-                    <i class="fas fa-circle me-1" style="font-size:0.6rem;"></i>
-                    Running
-                </h6>
-            </div>
-        </div>
-
     </div>
 
-    <!-- Actions -->
-    <div class="row g-4">
-
-        <div class="col-md-6">
-            <div class="card h-100 p-4">
-                <h5 class="mb-2" style="color:#c9d1d9;">User Management</h5>
-                <p class="text-secondary mb-3">
-                    View and manage registered users
-                </p>
-
-                <a href="{{ url_for('admin.users') }}" class="btn btn-primary">
-                    <i class="fas fa-users me-2"></i>Manage Users
-                </a>
+    <div class="stat-card">
+        <div class="stat-icon-wrap icon-green">
+            <i class="fas fa-server"></i>
+        </div>
+        <div>
+            <div class="stat-label">System Status</div>
+            <div class="stat-value" style="font-size:18px; color:var(--accent-green);">Operational</div>
+            <div class="stat-badge" style="color:var(--accent-green);">
+                <span style="width:6px;height:6px;border-radius:50%;background:var(--accent-green);display:inline-block;animation:pulse-dot 2s infinite;"></span>
+                All systems running
             </div>
         </div>
-
-        <div class="col-md-6">
-            <div class="card h-100 p-4">
-                <h5 class="mb-2" style="color:#c9d1d9;">Scan Records</h5>
-                <p class="text-secondary mb-3">
-                    View scan activity across users
-                </p>
-
-                <a href="{{ url_for('admin.scans') }}" class="btn btn-primary">
-                    <i class="fas fa-database me-2"></i>View Scans
-                </a>
-            </div>
-        </div>
-        <div class="col-md-4">
-    <div class="card p-3">
-
-        <div class="d-flex justify-content-between align-items-center">
-            <div>
-                <h6 style="color:#8b949e;">Monitored Domains</h6>
-
-                <h3 style="color:#c9d1d9; font-weight:600;">
-                    {{ monitor_count }}
-                </h3>
-                <span class="badge mt-1"
-                      style="background:#1c3d2a; color:#3fb950;">
-                    Active Monitoring
-                </span>
-            </div>
-            <div>
-                <a href="{{ url_for('admin.monitor_domains') }}"
-                   class="btn btn-sm"
-                   style="
-                        background:#1c2d3d;
-                        color:#58a6ff;
-                        border:1px solid #30363d;
-                   ">
-                    View
-                </a>
-            </div>
-
-        </div>
-
     </div>
 </div>
 
+<!-- Action Cards -->
+<div class="action-grid">
+    <div class="action-card">
+        <div class="action-card-icon icon-purple">
+            <i class="fas fa-users"></i>
+        </div>
+        <div class="action-card-title">User Management</div>
+        <div class="action-card-desc">View, manage, and delete registered analyst accounts across the platform.</div>
+        <a href="{{ url_for('admin.users') }}" class="btn btn-primary btn-sm" style="align-self:flex-start;">
+            <i class="fas fa-users me-2"></i>Manage Users
+        </a>
+    </div>
+
+    <div class="action-card">
+        <div class="action-card-icon icon-blue">
+            <i class="fas fa-database"></i>
+        </div>
+        <div class="action-card-title">Scan Records</div>
+        <div class="action-card-desc">View full scan activity, CVE results, and tech stack data across all users.</div>
+        <a href="{{ url_for('admin.scans') }}" class="btn btn-primary btn-sm" style="align-self:flex-start;">
+            <i class="fas fa-database me-2"></i>View Scans
+        </a>
+    </div>
 </div>
+
+<!-- Monitor Widget -->
+<div class="monitor-widget">
+    <div style="display:flex; align-items:center; gap:16px;">
+        <div class="action-card-icon icon-green" style="margin-bottom:0; width:38px; height:38px; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;">
+            <i class="fas fa-satellite-dish"></i>
+        </div>
+        <div>
+            <div style="font-size:11px; font-weight:600; letter-spacing:0.6px; text-transform:uppercase; color:var(--text-muted); margin-bottom:3px;">Monitored Domains</div>
+            <div style="font-family:var(--font-display); font-size:24px; font-weight:700; color:var(--text-primary); line-height:1;">{{ monitor_count }}</div>
+            <span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; color:var(--accent-green); margin-top:4px;">
+                <span style="width:5px;height:5px;border-radius:50%;background:var(--accent-green);animation:pulse-dot 2s infinite;"></span>
+                Active Monitoring
+            </span>
+        </div>
+    </div>
+    <a href="{{ url_for('admin.monitor_domains') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-right me-1"></i>View All
+    </a>
+</div>
+
 {% endblock %}

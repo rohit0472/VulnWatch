@@ -7,14 +7,14 @@ from threading import Semaphore
 
 logger = logging.getLogger(__name__)
 
-scheduler  = BackgroundScheduler()
-scan_limiter = Semaphore(1)   
+scheduler    = BackgroundScheduler()
+scan_limiter = Semaphore(1)
 
 
 def scan_monitored_domain(domain_id, domain, alert_email, user_id):
-    
+
     with scan_limiter:
-       
+
         from app import create_app
         app = create_app()
 
@@ -63,6 +63,7 @@ def scan_monitored_domain(domain_id, domain, alert_email, user_id):
 
                 logger.info(f"Total CVEs found for {domain}: {len(all_cves)}")
 
+                # ── Build new CVE list — 7-day cooldown per CVE ───────────────
                 new_cves = []
                 for cve in all_cves:
                     cve_id = cve.get('id')
@@ -74,7 +75,10 @@ def scan_monitored_domain(domain_id, domain, alert_email, user_id):
                         logger.debug(f"  Skipping {cve_id} — confidence={confidence}")
                         continue
 
-                    recently_alerted = MonitoredDomain.was_alerted_recently(domain, cve_id)
+                    # 168h = 7 days — same CVE won't re-alert for a week
+                    recently_alerted = MonitoredDomain.was_alerted_recently(
+                        domain, cve_id, cooldown_hours=168
+                    )
                     logger.info(f"  CVE {cve_id} | confidence={confidence} | recently_alerted={recently_alerted}")
 
                     if not recently_alerted:
@@ -82,13 +86,29 @@ def scan_monitored_domain(domain_id, domain, alert_email, user_id):
 
                 logger.info(f"New CVEs to alert for {domain}: {len(new_cves)}")
 
-               
+                # ── Sort by confidence then score ─────────────────────────────
                 confidence_order = {'high': 0, 'medium': 1, 'low': 2}
                 new_cves.sort(key=lambda c: (
                     confidence_order.get(c.get('confidence', 'low'), 2),
                     -(c.get('score') or 0)
                 ))
 
+                # ── Alert threshold guard — avoid noise emails ────────────────
+                # Always alert for any verified (version-matched) CVE.
+                # For possible CVEs only, require at least 3 to avoid spam
+                # from minor keyword-match fluctuations between scans.
+                if new_cves:
+                    verified_new = [c for c in new_cves if c.get('confidence') == 'high']
+                    possible_new = [c for c in new_cves if c.get('confidence') == 'medium']
+
+                    if not verified_new and len(possible_new) < 3:
+                        logger.info(
+                            f"Skipping alert for {domain} — "
+                            f"only {len(possible_new)} possible CVE(s), below threshold of 3"
+                        )
+                        new_cves = []  # suppress send
+
+                # ── Send alert ────────────────────────────────────────────────
                 if new_cves:
                     logger.info(f"Sending alert to {alert_email} for {domain}")
                     sent = send_alert_email(alert_email, domain, new_cves)
@@ -101,9 +121,10 @@ def scan_monitored_domain(domain_id, domain, alert_email, user_id):
                 else:
                     logger.info(f"No new CVEs to alert for {domain} — skipping email")
 
-                all_cves_list  = cves_result.get('cves', [])
-                exploit_count  = sum(1 for c in all_cves_list if c.get('exploit_available'))
- 
+                # ── Update monitor dashboard stats ────────────────────────────
+                all_cves_list = cves_result.get('cves', [])
+                exploit_count = sum(1 for c in all_cves_list if c.get('exploit_available'))
+
                 MonitoredDomain.update_scan_result(
                     domain_id,
                     {
@@ -111,7 +132,7 @@ def scan_monitored_domain(domain_id, domain, alert_email, user_id):
                         'cve_total':     cves_result.get('total', 0),
                         'verified_cves': cves_result.get('high_confidence', 0),
                         'header_grade':  result.get('headers', {}).get('header_grade'),
-                        'exploit_count': exploit_count,   # NEW
+                        'exploit_count': exploit_count,
                     },
                     status='ok'
                 )
@@ -142,7 +163,7 @@ def add_monitor_job(domain_id, domain, alert_email, user_id):
         scheduler.add_job(
             run_scan_thread,
             trigger='interval',
-            hours=2,
+            hours=24,
             id=job_id,
             args=[domain_id, domain, alert_email, user_id],
             replace_existing=True,

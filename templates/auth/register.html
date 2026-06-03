@@ -1,67 +1,433 @@
 {% extends 'base.html' %}
 {% block title %}Register — VulnWatch{% endblock %}
 
+{% block extra_css %}
+<style>
+    .auth-shell {
+        min-height: 100vh;
+        background: var(--bg-void);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .auth-shell::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image:
+            linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+        background-size: 40px 40px;
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .auth-shell::after {
+        content: '';
+        position: fixed;
+        top: -120px; left: -120px;
+        width: 400px; height: 400px;
+        background: radial-gradient(circle, rgba(0,212,255,0.06) 0%, transparent 65%);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .auth-glow-br {
+        position: fixed;
+        bottom: -100px; right: -100px;
+        width: 350px; height: 350px;
+        background: radial-gradient(circle, rgba(167,139,250,0.05) 0%, transparent 65%);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .auth-card {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 460px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        overflow: hidden;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,212,255,0.05);
+    }
+
+    .auth-card-top {
+        padding: 28px 32px 22px;
+        border-bottom: 1px solid var(--border-faint);
+        text-align: center;
+    }
+
+    .auth-logo {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+        text-decoration: none;
+    }
+
+    .auth-logo-icon {
+        width: 38px; height: 38px;
+        background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+        border-radius: var(--radius-md);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 15px; color: var(--bg-void);
+        box-shadow: 0 0 16px rgba(0,212,255,0.25);
+    }
+
+    .auth-logo-name {
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: 0.3px;
+    }
+
+    .auth-logo-name span { color: var(--accent-cyan); }
+
+    .auth-tagline {
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+
+    .auth-body {
+        padding: 24px 32px;
+    }
+
+    .field-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+
+    .field-wrap {
+        margin-bottom: 16px;
+    }
+
+    .field-label {
+        display: block;
+        font-size: 11.5px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+        margin-bottom: 7px;
+    }
+
+    .field-input-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .field-input-wrap i.field-icon {
+        position: absolute;
+        left: 13px;
+        color: var(--text-muted);
+        font-size: 12px;
+        pointer-events: none;
+        transition: color 0.15s;
+        z-index: 2;
+    }
+
+    .field-input-wrap .form-control {
+        padding-left: 36px !important;
+        height: 40px;
+        font-size: 13.5px !important;
+        background: var(--bg-raised) !important;
+    }
+
+    .field-input-wrap:focus-within i.field-icon {
+        color: var(--accent-cyan);
+    }
+
+    .field-hint {
+        font-size: 11.5px;
+        color: var(--text-muted);
+        margin-top: 5px;
+        line-height: 1.4;
+    }
+
+    /* Password strength meter */
+    .strength-bar-wrap {
+        display: flex;
+        gap: 4px;
+        margin-top: 6px;
+    }
+
+    .strength-seg {
+        flex: 1;
+        height: 3px;
+        border-radius: 99px;
+        background: var(--border-faint);
+        transition: background 0.25s ease;
+    }
+
+    .strength-seg.active-weak   { background: var(--accent-red); }
+    .strength-seg.active-fair   { background: var(--accent-amber); }
+    .strength-seg.active-good   { background: var(--accent-cyan); }
+    .strength-seg.active-strong { background: var(--accent-green); }
+
+    .strength-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-top: 3px;
+        min-height: 14px;
+    }
+
+    .auth-submit {
+        width: 100%;
+        height: 44px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        background: var(--accent-cyan) !important;
+        border-color: var(--accent-cyan) !important;
+        color: var(--bg-void) !important;
+        border-radius: var(--radius-md);
+        transition: all 0.15s;
+        margin-top: 4px;
+    }
+
+    .auth-submit:hover {
+        background: #00b8e0 !important;
+        box-shadow: 0 4px 16px rgba(0,212,255,0.3);
+        transform: translateY(-1px);
+    }
+
+    .auth-submit:active { transform: translateY(0); }
+
+    .auth-footer {
+        padding: 14px 32px 22px;
+        text-align: center;
+        border-top: 1px solid var(--border-faint);
+    }
+
+    .auth-footer p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin: 0;
+    }
+
+    .auth-footer a {
+        color: var(--accent-cyan);
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .auth-footer a:hover { text-decoration: underline; }
+
+    /* Requirements checklist */
+    .req-list {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3px 12px;
+        margin-top: 6px;
+    }
+
+    .req-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        color: var(--text-muted);
+        transition: color 0.2s;
+    }
+
+    .req-item i {
+        font-size: 9px;
+        width: 12px;
+        text-align: center;
+        transition: color 0.2s;
+    }
+
+    .req-item.met { color: var(--accent-green); }
+    .req-item.met i { color: var(--accent-green); }
+
+    .section-divider {
+        height: 1px;
+        background: var(--border-faint);
+        margin: 4px 0 16px;
+    }
+
+    @media (max-width: 480px) {
+        .auth-body { padding: 20px; }
+        .auth-card-top { padding: 22px 20px 18px; }
+        .auth-footer { padding: 14px 20px 20px; }
+        .field-row { grid-template-columns: 1fr; }
+        .req-list { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="row justify-content-center mt-5">
-    <div class="col-md-6">
-        <div class="card shadow">
-            <div class="card-header text-center py-4 border-bottom-0">
-                <h3 class="mb-1">
-                    <i class="fas fa-shield-alt me-2" style="color: #3fb950;"></i>
-                    <span style="color: #58a6ff;">VulnWatch</span>
-                </h3>
-                <small class="text-secondary">Create your account</small>
-            </div>
-            
-            <div class="card-body p-4">
-                <form method="POST" action="{{ url_for('auth.register') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="auth-shell">
+    <div class="auth-glow-br"></div>
 
-                    <div class="mb-3">
-                        <label class="form-label text-light">Username</label>
-                        <input type="text" name="username" class="form-control"
-                               placeholder="yourname" value="{{ username or '' }}" required>
-                        <small class="text-secondary">3-30 characters, letters/numbers/underscores only</small>
-                    </div>
+    <div class="auth-card">
+        <div class="auth-card-top">
+            <a class="auth-logo" href="#">
+                <div class="auth-logo-icon">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <span class="auth-logo-name">Vuln<span>Watch</span></span>
+            </a>
+            <div class="auth-tagline">Create your analyst account</div>
+        </div>
 
-                    <div class="mb-3">
-                        <label class="form-label text-light">Email address</label>
-                        <input type="email" name="email" class="form-control"
-                               placeholder="you@example.com" value="{{ email or '' }}" required>
-                    </div>
+        <div class="auth-body">
+            <form method="POST" action="{{ url_for('auth.register') }}" id="registerForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-                    <div class="mb-3">
-                        <label class="form-label text-light">Password</label>
-                        <input type="password" name="password" class="form-control"
-                               placeholder="••••••••" required>
-                        <small class="text-secondary">
-                            Min 8 chars, uppercase, lowercase, number, special character
-                        </small>
+                <!-- Username -->
+                <div class="field-wrap">
+                    <label class="field-label" for="username">Username</label>
+                    <div class="field-input-wrap">
+                        <i class="fas fa-user field-icon"></i>
+                        <input type="text" id="username" name="username" class="form-control"
+                               placeholder="yourname"
+                               value="{{ username or '' }}" required
+                               autocomplete="username">
                     </div>
+                    <div class="field-hint">3–30 chars · letters, numbers, underscores</div>
+                </div>
 
-                    <div class="mb-3">
-                        <label class="form-label text-light">Confirm Password</label>
-                        <input type="password" name="confirm_password" class="form-control"
-                               placeholder="••••••••" required>
+                <!-- Email -->
+                <div class="field-wrap">
+                    <label class="field-label" for="email">Email address</label>
+                    <div class="field-input-wrap">
+                        <i class="fas fa-envelope field-icon"></i>
+                        <input type="email" id="email" name="email" class="form-control"
+                               placeholder="you@example.com"
+                               value="{{ email or '' }}" required
+                               autocomplete="email">
                     </div>
+                </div>
 
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary py-2">
-                            <i class="fas fa-user-plus me-2"></i>Create Account
-                        </button>
+                <div class="section-divider"></div>
+
+                <!-- Password -->
+                <div class="field-wrap">
+                    <label class="field-label" for="password">Password</label>
+                    <div class="field-input-wrap">
+                        <i class="fas fa-lock field-icon"></i>
+                        <input type="password" id="password" name="password" class="form-control"
+                               placeholder="••••••••" required
+                               autocomplete="new-password">
                     </div>
-                </form>
-            </div>
-            
-            <div class="card-footer text-center py-3 bg-transparent border-top-0">
-                <small class="text-secondary">
-                    Already have an account? 
-                    <a href="{{ url_for('auth.login') }}" class="text-decoration-none" style="color: #58a6ff;">
-                        Sign in here
-                    </a>
-                </small>
-            </div>
+                    <!-- Strength bar -->
+                    <div class="strength-bar-wrap">
+                        <div class="strength-seg" id="seg1"></div>
+                        <div class="strength-seg" id="seg2"></div>
+                        <div class="strength-seg" id="seg3"></div>
+                        <div class="strength-seg" id="seg4"></div>
+                    </div>
+                    <div class="strength-label" id="strengthLabel"></div>
+                    <!-- Requirement checklist -->
+                    <div class="req-list" id="reqList">
+                        <div class="req-item" id="req-len"><i class="fas fa-circle"></i>Min 8 characters</div>
+                        <div class="req-item" id="req-upper"><i class="fas fa-circle"></i>Uppercase letter</div>
+                        <div class="req-item" id="req-lower"><i class="fas fa-circle"></i>Lowercase letter</div>
+                        <div class="req-item" id="req-num"><i class="fas fa-circle"></i>Number</div>
+                        <div class="req-item" id="req-special"><i class="fas fa-circle"></i>Special character</div>
+                    </div>
+                </div>
+
+                <!-- Confirm Password -->
+                <div class="field-wrap">
+                    <label class="field-label" for="confirm_password">Confirm Password</label>
+                    <div class="field-input-wrap">
+                        <i class="fas fa-lock field-icon"></i>
+                        <input type="password" id="confirm_password" name="confirm_password"
+                               class="form-control" placeholder="••••••••" required
+                               autocomplete="new-password">
+                    </div>
+                    <div class="field-hint" id="matchHint" style="min-height:16px;"></div>
+                </div>
+
+                <button type="submit" class="auth-submit btn">
+                    <i class="fas fa-user-plus me-2"></i>Create Account
+                </button>
+            </form>
+        </div>
+
+        <div class="auth-footer">
+            <p>Already have an account?
+                <a href="{{ url_for('auth.login') }}">Sign in →</a>
+            </p>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const pw    = document.getElementById('password');
+    const conf  = document.getElementById('confirm_password');
+    const segs  = [1,2,3,4].map(i => document.getElementById('seg' + i));
+    const label = document.getElementById('strengthLabel');
+    const match = document.getElementById('matchHint');
+
+    const reqs = {
+        len:     { el: document.getElementById('req-len'),     test: v => v.length >= 8 },
+        upper:   { el: document.getElementById('req-upper'),   test: v => /[A-Z]/.test(v) },
+        lower:   { el: document.getElementById('req-lower'),   test: v => /[a-z]/.test(v) },
+        num:     { el: document.getElementById('req-num'),     test: v => /[0-9]/.test(v) },
+        special: { el: document.getElementById('req-special'), test: v => /[^A-Za-z0-9]/.test(v) },
+    };
+
+    const levels = [
+        { cls: '',             text: '',          segs: 0 },
+        { cls: 'active-weak',  text: 'Weak',      segs: 1 },
+        { cls: 'active-fair',  text: 'Fair',      segs: 2 },
+        { cls: 'active-good',  text: 'Good',      segs: 3 },
+        { cls: 'active-strong',text: 'Strong',    segs: 4 },
+    ];
+
+    const colors = { 'Weak': 'var(--accent-red)', 'Fair': 'var(--accent-amber)', 'Good': 'var(--accent-cyan)', 'Strong': 'var(--accent-green)' };
+
+    pw.addEventListener('input', () => {
+        const v = pw.value;
+        let score = 0;
+
+        Object.values(reqs).forEach(r => {
+            const ok = r.test(v);
+            r.el.classList.toggle('met', ok);
+            r.el.querySelector('i').className = ok ? 'fas fa-check-circle' : 'fas fa-circle';
+            if (ok) score++;
+        });
+
+        // Clear all seg classes
+        segs.forEach(s => s.className = 'strength-seg');
+
+        if (v.length === 0) { label.textContent = ''; return; }
+
+        const lvl = levels[Math.min(score, 4)];
+        for (let i = 0; i < lvl.segs; i++) segs[i].classList.add(lvl.cls);
+        label.textContent = lvl.text;
+        label.style.color = colors[lvl.text] || 'var(--text-muted)';
+
+        checkMatch();
+    });
+
+    conf.addEventListener('input', checkMatch);
+
+    function checkMatch() {
+        if (!conf.value) { match.textContent = ''; return; }
+        if (pw.value === conf.value) {
+            match.textContent = '✓ Passwords match';
+            match.style.color = 'var(--accent-green)';
+        } else {
+            match.textContent = '✗ Passwords do not match';
+            match.style.color = 'var(--accent-red)';
+        }
+    }
+})();
+</script>
 {% endblock %}

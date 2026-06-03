@@ -1,55 +1,286 @@
 {% extends 'base.html' %}
-{% block title %}Login — VulnWatch{% endblock %}
+{% block title %}Sign In — VulnWatch{% endblock %}
+
+{% block extra_css %}
+<style>
+    .auth-shell {
+        min-height: 100vh;
+        background: var(--bg-void);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Subtle grid bg */
+    .auth-shell::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image:
+            linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+        background-size: 40px 40px;
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    /* Glow orbs */
+    .auth-shell::after {
+        content: '';
+        position: fixed;
+        top: -120px; left: -120px;
+        width: 400px; height: 400px;
+        background: radial-gradient(circle, rgba(0,212,255,0.06) 0%, transparent 65%);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .auth-glow-br {
+        position: fixed;
+        bottom: -100px; right: -100px;
+        width: 350px; height: 350px;
+        background: radial-gradient(circle, rgba(0,229,160,0.05) 0%, transparent 65%);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .auth-card {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 420px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        overflow: hidden;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,212,255,0.05);
+    }
+
+    .auth-card-top {
+        padding: 32px 32px 24px;
+        border-bottom: 1px solid var(--border-faint);
+        text-align: center;
+    }
+
+    .auth-logo {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+        text-decoration: none;
+    }
+
+    .auth-logo-icon {
+        width: 40px; height: 40px;
+        background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+        border-radius: var(--radius-md);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 16px; color: var(--bg-void);
+        box-shadow: 0 0 16px rgba(0,212,255,0.25);
+    }
+
+    .auth-logo-name {
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: 0.3px;
+    }
+
+    .auth-logo-name span { color: var(--accent-cyan); }
+
+    .auth-tagline {
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+
+    .auth-body {
+        padding: 28px 32px;
+    }
+
+    .field-wrap {
+        margin-bottom: 18px;
+    }
+
+    .field-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+        margin-bottom: 7px;
+    }
+
+    .field-input-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .field-input-wrap i {
+        position: absolute;
+        left: 13px;
+        color: var(--text-muted);
+        font-size: 13px;
+        pointer-events: none;
+        transition: color 0.15s;
+    }
+
+    .field-input-wrap .form-control {
+        padding-left: 38px !important;
+        height: 42px;
+        font-size: 14px !important;
+        background: var(--bg-raised) !important;
+    }
+
+    .field-input-wrap:focus-within i {
+        color: var(--accent-cyan);
+    }
+
+    .remember-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 22px;
+    }
+
+    .form-check-input {
+        width: 15px; height: 15px;
+        background: var(--bg-raised) !important;
+        border: 1px solid var(--border-default) !important;
+        cursor: pointer;
+        flex-shrink: 0;
+        margin: 0 !important;
+    }
+
+    .form-check-input:checked {
+        background-color: var(--accent-cyan) !important;
+        border-color: var(--accent-cyan) !important;
+    }
+
+    .remember-label {
+        font-size: 13px;
+        color: var(--text-muted);
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .auth-submit {
+        width: 100%;
+        height: 44px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        background: var(--accent-cyan) !important;
+        border-color: var(--accent-cyan) !important;
+        color: var(--bg-void) !important;
+        border-radius: var(--radius-md);
+        transition: all 0.15s;
+        box-shadow: 0 0 0 rgba(0,212,255,0);
+    }
+
+    .auth-submit:hover {
+        background: #00b8e0 !important;
+        box-shadow: 0 4px 16px rgba(0,212,255,0.3);
+        transform: translateY(-1px);
+    }
+
+    .auth-submit:active { transform: translateY(0); }
+
+    .auth-footer {
+        padding: 16px 32px 24px;
+        text-align: center;
+        border-top: 1px solid var(--border-faint);
+    }
+
+    .auth-footer p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin: 0;
+    }
+
+    .auth-footer a {
+        color: var(--accent-cyan);
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .auth-footer a:hover { text-decoration: underline; }
+
+    .divider-row {
+        display: flex; align-items: center; gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .divider-row::before, .divider-row::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: var(--border-faint);
+    }
+
+    .divider-row span {
+        font-size: 11px; color: var(--text-muted); white-space: nowrap;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center mt-5">
-    <div class="col-md-5">
-        <div class="card shadow">
-            <div class="card-header text-center py-4 border-bottom-0">
-                <h3 class="mb-1">
-                    <i class="fas fa-shield-alt me-2" style="color: #3fb950;"></i>
-                    <span style="color: #58a6ff;">VulnWatch</span>
-                </h3>
-                <small class="text-secondary">Sign in to monitor vulnerabilities</small>
-            </div>
-            
-            <div class="card-body p-4">
-                <form method="POST" action="{{ url_for('auth.login') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="auth-shell">
+    <div class="auth-glow-br"></div>
 
-                    <div class="mb-3">
-                        <label class="form-label text-light">Email address</label>
-                        <input type="email" name="email" class="form-control"
-                               placeholder="you@example.com" required>
-                    </div>
+    <div class="auth-card">
+        <div class="auth-card-top">
+            <a class="auth-logo" href="#">
+                <div class="auth-logo-icon">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <span class="auth-logo-name">Vuln<span>Watch</span></span>
+            </a>
+            <div class="auth-tagline">Sign in to your security operations console</div>
+        </div>
 
-                    <div class="mb-3">
-                        <label class="form-label text-light">Password</label>
-                        <input type="password" name="password" class="form-control"
-                               placeholder="••••••••" required>
-                    </div>
+        <div class="auth-body">
+            <form method="POST" action="{{ url_for('auth.login') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-                    <div class="mb-4 form-check">
-                        <input type="checkbox" name="remember" class="form-check-input" id="remember">
-                        <label class="text-secondary" for="remember">Remember me</label>
+                <div class="field-wrap">
+                    <label class="field-label" for="email">Email address</label>
+                    <div class="field-input-wrap">
+                        <i class="fas fa-envelope"></i>
+                        <input type="email" id="email" name="email" class="form-control"
+                               placeholder="you@example.com" required autocomplete="email">
                     </div>
+                </div>
 
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary py-2">
-                            <i class="fas fa-sign-in-alt me-2"></i>Sign In
-                        </button>
+                <div class="field-wrap">
+                    <label class="field-label" for="password">Password</label>
+                    <div class="field-input-wrap">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="password" name="password" class="form-control"
+                               placeholder="••••••••" required autocomplete="current-password">
                     </div>
-                </form>
-            </div>
-            
-            <div class="card-footer text-center py-3 bg-transparent border-top-0">
-                <small class="text-secondary">
-                    Don't have an account? 
-                    <a href="{{ url_for('auth.register') }}" class="text-decoration-none" style="color: #58a6ff;">
-                        Register here
-                    </a>
-                </small>
-            </div>
+                </div>
+
+                <div class="remember-row">
+                    <input type="checkbox" name="remember" class="form-check-input" id="remember">
+                    <label class="remember-label" for="remember">Keep me signed in</label>
+                </div>
+
+                <button type="submit" class="auth-submit btn">
+                    <i class="fas fa-sign-in-alt me-2"></i>Sign In
+                </button>
+            </form>
+        </div>
+
+        <div class="auth-footer">
+            <p>Don't have an account?
+                <a href="{{ url_for('auth.register') }}">Create one →</a>
+            </p>
         </div>
     </div>
 </div>

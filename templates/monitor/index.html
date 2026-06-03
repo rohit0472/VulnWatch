@@ -1,193 +1,558 @@
 {% extends 'base.html' %}
 {% block title %}Monitor — VulnWatch{% endblock %}
+{% block breadcrumb %}Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ─── PAGE HEADER ─── */
+    .page-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .page-title {
+        font-family: var(--font-display);
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: -0.3px;
+        line-height: 1.2;
+    }
+
+    .page-subtitle {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-top: 4px;
+    }
+
+    /* ─── ADD DOMAIN PANEL ─── */
+    .add-panel {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        margin-bottom: 24px;
+    }
+
+    .add-panel-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border-faint);
+    }
+
+    .add-panel-header-icon {
+        width: 30px; height: 30px;
+        border-radius: var(--radius-sm);
+        background: rgba(0,229,160,0.1);
+        color: var(--accent-green);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 12px;
+        flex-shrink: 0;
+    }
+
+    .add-panel-header h6 {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    .add-panel-body {
+        padding: 20px;
+    }
+
+    .add-form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 12px;
+        align-items: end;
+    }
+
+    .form-field-label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        display: block;
+        margin-bottom: 7px;
+    }
+
+    .input-with-icon {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .input-with-icon i {
+        position: absolute;
+        left: 12px;
+        color: var(--text-muted);
+        font-size: 12px;
+        pointer-events: none;
+        transition: color 0.15s;
+        z-index: 2;
+    }
+
+    .input-with-icon .form-control {
+        padding-left: 34px !important;
+        height: 40px;
+        font-size: 13.5px !important;
+    }
+
+    .input-with-icon:focus-within i { color: var(--accent-cyan); }
+
+    .add-hint {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .add-hint i { color: var(--accent-cyan); font-size: 11px; }
+
+    /* ─── DOMAINS TABLE PANEL ─── */
+    .domains-panel {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+    }
+
+    .domains-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .domains-panel-header h6 {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .count-pill {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 99px;
+        background: rgba(0,212,255,0.08);
+        color: var(--accent-cyan);
+        border: 1px solid rgba(0,212,255,0.2);
+        font-family: var(--font-mono);
+    }
+
+    .unlimited-pill {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        padding: 2px 8px;
+        border-radius: 99px;
+        background: rgba(0,229,160,0.08);
+        color: var(--accent-green);
+        border: 1px solid rgba(0,229,160,0.2);
+        text-transform: uppercase;
+    }
+
+    /* Table overrides */
+    .domains-table th {
+        font-size: 10.5px !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.8px !important;
+        text-transform: uppercase !important;
+        color: var(--text-muted) !important;
+        padding: 10px 16px !important;
+        background: var(--bg-base) !important;
+        border-bottom: 1px solid var(--border-subtle) !important;
+        white-space: nowrap;
+    }
+
+    .domains-table td {
+        padding: 12px 16px !important;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--border-faint) !important;
+    }
+
+    .domains-table tbody tr:last-child td {
+        border-bottom: none !important;
+    }
+
+    .domain-code {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        color: var(--accent-cyan);
+    }
+
+    .email-text {
+        font-size: 12.5px;
+        color: var(--text-secondary);
+    }
+
+    .scan-time {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--text-muted);
+    }
+
+    .pending-text {
+        font-size: 12px;
+        color: var(--text-muted);
+        font-style: italic;
+    }
+
+    /* Status badges */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.4px;
+        padding: 3px 9px;
+        border-radius: 99px;
+        border: 1px solid;
+    }
+
+    .status-badge .status-dot {
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .status-active {
+        background: rgba(0,229,160,0.08);
+        color: var(--accent-green);
+        border-color: rgba(0,229,160,0.25);
+    }
+    .status-active .status-dot { background: var(--accent-green); animation: pulse-dot 2s infinite; }
+
+    .status-error {
+        background: rgba(255,71,87,0.08);
+        color: var(--accent-red);
+        border-color: rgba(255,71,87,0.25);
+    }
+    .status-error .status-dot { background: var(--accent-red); }
+
+    .status-pending {
+        background: rgba(255,255,255,0.04);
+        color: var(--text-muted);
+        border-color: var(--border-faint);
+    }
+    .status-pending .status-dot { background: var(--text-muted); }
+
+    /* Result cell */
+    .result-cell {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .result-score {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--accent-cyan);
+        background: rgba(0,212,255,0.07);
+        border: 1px solid rgba(0,212,255,0.15);
+        padding: 2px 7px;
+        border-radius: var(--radius-sm);
+    }
+
+    .cve-chip {
+        font-size: 10.5px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: var(--radius-sm);
+        background: rgba(255,71,87,0.1);
+        color: var(--accent-red);
+        border: 1px solid rgba(255,71,87,0.25);
+        letter-spacing: 0.3px;
+    }
+
+    .exploit-chip {
+        font-size: 10.5px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: var(--radius-sm);
+        background: rgba(255,170,0,0.1);
+        color: var(--accent-amber);
+        border: 1px solid rgba(255,170,0,0.25);
+        letter-spacing: 0.3px;
+    }
+
+    /* Action buttons */
+    .action-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .btn-icon {
+        width: 30px; height: 30px;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-default);
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 0.15s;
+        font-size: 12px;
+        flex-shrink: 0;
+    }
+
+    .btn-icon:hover {
+        background: var(--bg-raised);
+        color: var(--text-primary);
+        border-color: var(--border-strong);
+    }
+
+    .btn-icon-danger:hover {
+        background: rgba(255,71,87,0.1);
+        color: var(--accent-red);
+        border-color: rgba(255,71,87,0.3);
+    }
+
+    .btn-scan:hover {
+        background: rgba(0,212,255,0.08);
+        color: var(--accent-cyan);
+        border-color: rgba(0,212,255,0.3);
+    }
+
+    /* ─── EMPTY STATE ─── */
+    .empty-monitor {
+        text-align: center;
+        padding: 56px 24px;
+    }
+
+    .empty-icon-wrap {
+        width: 56px; height: 56px;
+        border-radius: var(--radius-lg);
+        background: var(--bg-raised);
+        border: 1px solid var(--border-subtle);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 22px;
+        color: var(--text-muted);
+        margin: 0 auto 16px;
+    }
+
+    .empty-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+    }
+
+    .empty-sub {
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+
+    @media (max-width: 768px) {
+        .add-form-grid {
+            grid-template-columns: 1fr;
+        }
+        .domains-table { min-width: 700px; }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 
-<div class="row mb-4 align-items-center">
-    <div class="col">
-        <h2 class="mb-1">
-            <i class="fas fa-eye me-2" style="color:#3fb950;"></i>
-            Domain Monitoring
-        </h2>
-        <p class="text-secondary mb-0">
-            24/7 automated scanning with email alerts on new vulnerabilities
-        </p>
+<!-- Page Header -->
+<div class="page-header">
+    <div>
+        <div class="page-title">Domain Monitoring</div>
+        <div class="page-subtitle">24/7 automated scanning with email alerts on new vulnerabilities</div>
     </div>
 </div>
 
-<!-- Add Domain Form -->
-<div class="card mb-4">
-    <div class="card-header py-3">
-        <h5 class="mb-0" style="color:#c9d1d9;">
-            <i class="fas fa-plus-circle me-2" style="color:#3fb950;"></i>
-            Add Domain to Monitor
-        </h5>
+<!-- Add Domain Panel -->
+<div class="add-panel">
+    <div class="add-panel-header">
+        <div class="add-panel-header-icon">
+            <i class="fas fa-plus"></i>
+        </div>
+        <h6>Add Domain to Monitor</h6>
     </div>
-    <div class="card-body p-4">
+    <div class="add-panel-body">
         <form method="POST" action="{{ url_for('monitor.index') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="row g-3">
-                <div class="col-md-5">
-                    <label class="form-label text-secondary">Domain</label>
-                    <input type="text" name="domain" class="form-control"
-                           placeholder="example.com" required>
+            <div class="add-form-grid">
+                <div>
+                    <label class="form-field-label">Domain</label>
+                    <div class="input-with-icon">
+                        <i class="fas fa-globe"></i>
+                        <input type="text" name="domain" class="form-control"
+                               placeholder="example.com" required>
+                    </div>
                 </div>
-                <div class="col-md-5">
-                    <label class="form-label text-secondary">Alert Email</label>
-                    <input type="email" name="email" class="form-control"
-                           placeholder="alerts@example.com" required>
+                <div>
+                    <label class="form-field-label">Alert Email</label>
+                    <div class="input-with-icon">
+                        <i class="fas fa-envelope"></i>
+                        <input type="email" name="email" class="form-control"
+                               placeholder="alerts@example.com" required>
+                    </div>
                 </div>
-                <div class="col-md-2 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="fas fa-plus me-1"></i>Add
+                <div>
+                    <button type="submit" class="btn btn-primary" style="height:40px; padding:0 20px; white-space:nowrap;">
+                        <i class="fas fa-plus me-1"></i>Add Domain
                     </button>
                 </div>
             </div>
-            <small class="text-secondary mt-2 d-block">
-                {% if current_user.role == 'admin' %}
-                    Unlimited domains. Scans run every 24 hours. You'll be alerted on new CVEs.
-                {% else %}
-                    Maximum 5 domains. Scans run every 24 hours. You'll be alerted on new CVEs.
-                {% endif %}
-            </small>
         </form>
+        <div class="add-hint">
+            <i class="fas fa-info-circle"></i>
+            {% if current_user.role == 'admin' %}
+                Unlimited domains · Scans run every 24 hours · Alerted on new CVEs
+            {% else %}
+                Maximum 5 domains · Scans run every 24 hours · Alerted on new CVEs
+            {% endif %}
+        </div>
     </div>
 </div>
 
 <!-- Monitored Domains -->
 {% if domains %}
-<div class="card">
-    <div class="card-header py-3">
-        <h5 class="mb-0" style="color:#c9d1d9;">
-            <i class="fas fa-list me-2" style="color:#58a6ff;"></i>
+<div class="domains-panel">
+    <div class="domains-panel-header">
+        <h6>
+            <i class="fas fa-satellite-dish" style="color:var(--accent-cyan); font-size:13px;"></i>
+            Monitored Domains
             {% if current_user.role == 'admin' %}
-            Monitored Domains {{ domains|length }}
-            <span class="badge ms-2" style="background:#1c3d2a; color:#3fb950;">
-                Unlimited
-            </span>
+                <span class="count-pill">{{ domains|length }}</span>
+                <span class="unlimited-pill">Unlimited</span>
             {% else %}
-            Monitored Domains {{ domains|length }}/5
+                <span class="count-pill">{{ domains|length }} / 5</span>
             {% endif %}
-        </h5>
+        </h6>
     </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-dark table-hover mb-0"
-                   style="--bs-table-bg:transparent;">
-                <thead style="border-bottom:1px solid #30363d;">
-                    <tr>
-                        <th class="py-3 px-4">Domain</th>
-                        <th class="py-3 px-4">Alert Email</th>
-                        <th class="py-3 px-4">Last Scanned</th>
-                        <th class="py-3 px-4">Status</th>
-                        <th class="py-3 px-4">Last Result</th>
-                        <th class="py-3 px-4">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for d in domains %}
-                    <tr style="border-bottom:1px solid #30363d;">
 
-                        <!-- Domain -->
-                        <td class="py-3 px-4">
-                            <code style="color:#58a6ff;">{{ d.domain }}</code>
-                        </td>
+    <div class="table-responsive">
+        <table class="table mb-0 domains-table" style="--bs-table-bg:transparent; --bs-table-hover-bg:rgba(255,255,255,0.02);">
+            <thead>
+                <tr>
+                    <th>Domain</th>
+                    <th>Alert Email</th>
+                    <th>Last Scanned</th>
+                    <th>Status</th>
+                    <th>Last Result</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in domains %}
+                <tr>
+                    <!-- Domain -->
+                    <td>
+                        <span class="domain-code">{{ d.domain }}</span>
+                    </td>
 
-                        <!-- Alert Email -->
-                        <td class="py-3 px-4">
-                            <small class="text-secondary">{{ d.alert_email }}</small>
-                        </td>
+                    <!-- Alert Email -->
+                    <td>
+                        <span class="email-text">{{ d.alert_email }}</span>
+                    </td>
 
-                        <!-- Last Scanned -->
-                        <td class="py-3 px-4">
-                            <small class="text-secondary">
-                                {% if d.last_scanned %}
-                                    {{ d.last_scanned_ist.strftime('%Y-%m-%d %H:%M IST') }}
-                                {% else %}
-                                    Pending first scan
-                                {% endif %}
-                            </small>
-                        </td>
+                    <!-- Last Scanned -->
+                    <td>
+                        {% if d.last_scanned %}
+                            <span class="scan-time">{{ d.last_scanned_ist.strftime('%Y-%m-%d %H:%M IST') }}</span>
+                        {% else %}
+                            <span class="pending-text">Pending first scan</span>
+                        {% endif %}
+                    </td>
 
-                        <!-- Status -->
-                        <td class="py-3 px-4">
-                            {% if d.status == 'ok' %}
-                            <span class="badge" style="background:#1c3d2a; color:#3fb950;">Active</span>
-                            {% elif d.status == 'error' %}
-                            <span class="badge" style="background:#3d1c1c; color:#f85149;">Error</span>
-                            {% else %}
-                            <span class="badge" style="background:#21262d; color:#8b949e;">Pending</span>
+                    <!-- Status -->
+                    <td>
+                        {% if d.status == 'ok' %}
+                        <span class="status-badge status-active">
+                            <span class="status-dot"></span>Active
+                        </span>
+                        {% elif d.status == 'error' %}
+                        <span class="status-badge status-error">
+                            <span class="status-dot"></span>Error
+                        </span>
+                        {% else %}
+                        <span class="status-badge status-pending">
+                            <span class="status-dot"></span>Pending
+                        </span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Last Result -->
+                    <td>
+                        {% if d.last_scan_result %}
+                        <div class="result-cell">
+                            <span class="result-score">
+                                Score: {{ d.last_scan_result.get('risk_score', 'N/A') }}
+                            </span>
+                            {% if d.last_scan_result.get('verified_cves', 0) > 0 %}
+                            <span class="cve-chip">
+                                {{ d.last_scan_result.verified_cves }} CVE{{ 's' if d.last_scan_result.verified_cves > 1 else '' }}
+                            </span>
                             {% endif %}
-                        </td>
-
-                        <!-- Last Result — risk score + CVEs + exploit badge -->
-                        <td class="py-3 px-4">
-                            {% if d.last_scan_result %}
-                            <small>
-                                <span style="color:#58a6ff;">
-                                    Score: {{ d.last_scan_result.get('risk_score', 'N/A') }}
-                                </span>
-
-                                {% if d.last_scan_result.get('verified_cves', 0) > 0 %}
-                                <span class="badge ms-1"
-                                      style="background:#3d1c1c; color:#f85149;">
-                                    {{ d.last_scan_result.verified_cves }} CVEs
-                                </span>
-                                {% endif %}
-
-                                {# Exploit badge — only shown when exploits were found #}
-                                {% if d.last_scan_result.get('exploit_count', 0) > 0 %}
-                                <span class="badge ms-1"
-                                      style="background:#3d1c1c; color:#f85149;">
-                                    <i class="fas fa-fire me-1"></i>
-                                    {{ d.last_scan_result.exploit_count }} Exploit{{ 's' if d.last_scan_result.exploit_count > 1 else '' }}
-                                </span>
-                                {% endif %}
-                            </small>
-                            {% else %}
-                            <small class="text-secondary">—</small>
+                            {% if d.last_scan_result.get('exploit_count', 0) > 0 %}
+                            <span class="exploit-chip">
+                                <i class="fas fa-fire me-1" style="font-size:9px;"></i>{{ d.last_scan_result.exploit_count }} Exploit{{ 's' if d.last_scan_result.exploit_count > 1 else '' }}
+                            </span>
                             {% endif %}
-                        </td>
+                        </div>
+                        {% else %}
+                        <span style="font-size:12px; color:var(--text-muted);">—</span>
+                        {% endif %}
+                    </td>
 
-                        <!-- Actions -->
-                        <td class="py-3 px-4">
+                    <!-- Actions -->
+                    <td>
+                        <div class="action-group">
                             <form method="POST"
                                   action="{{ url_for('monitor.scan_now', domain_id=d['_id']) }}"
-                                  style="display:inline;">
+                                  style="display:contents;">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit"
-                                        class="btn btn-sm btn-outline-secondary me-1"
-                                        title="Scan Now">
+                                <button type="submit" class="btn-icon btn-scan" title="Scan now">
                                     <i class="fas fa-sync-alt"></i>
                                 </button>
                             </form>
                             <form method="POST"
                                   action="{{ url_for('monitor.remove', domain_id=d['_id']) }}"
-                                  style="display:inline;"
+                                  style="display:contents;"
                                   onsubmit="return confirm('Remove {{ d.domain }} from monitoring?')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit"
-                                        class="btn btn-sm btn-outline-danger"
-                                        title="Remove">
-                                    <i class="fas fa-trash"></i>
+                                <button type="submit" class="btn-icon btn-icon-danger" title="Remove">
+                                    <i class="fas fa-trash-alt"></i>
                                 </button>
                             </form>
-                        </td>
-
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
 {% else %}
-<div class="card">
-    <div class="card-body text-center py-5">
-        <i class="fas fa-eye-slash fa-3x text-secondary mb-3"></i>
-        <p class="text-secondary">No domains being monitored yet.</p>
-        <p class="text-secondary">Add a domain above to start 24/7 monitoring.</p>
+<div class="domains-panel">
+    <div class="empty-monitor">
+        <div class="empty-icon-wrap">
+            <i class="fas fa-satellite-dish"></i>
+        </div>
+        <div class="empty-title">No domains being monitored</div>
+        <div class="empty-sub">Add a domain above to start 24/7 surveillance</div>
     </div>
 </div>
 {% endif %}

@@ -1,146 +1,191 @@
 {% extends "base.html" %}
+{% block title %}Scan Records — VulnWatch{% endblock %}
+{% block breadcrumb %}Admin · Scan Records{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header {
+        display: flex; align-items: flex-start; justify-content: space-between;
+        margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
+    }
+    .page-title { font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
+    .page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+    .scans-panel {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+    }
+    .scans-panel-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 20px; border-bottom: 1px solid var(--border-subtle);
+    }
+    .scans-panel-header h6 {
+        font-size: 13.5px; font-weight: 600; color: var(--text-primary); margin: 0;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .count-pill {
+        font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px;
+        background: rgba(0,212,255,0.08); color: var(--accent-cyan);
+        border: 1px solid rgba(0,212,255,0.2); font-family: var(--font-mono);
+    }
+
+    .scans-table th {
+        font-size: 10.5px !important; font-weight: 600 !important;
+        letter-spacing: 0.8px !important; text-transform: uppercase !important;
+        color: var(--text-muted) !important; padding: 10px 16px !important;
+        background: var(--bg-base) !important;
+        border-bottom: 1px solid var(--border-subtle) !important;
+        white-space: nowrap;
+    }
+    .scans-table td {
+        padding: 12px 16px !important; vertical-align: middle;
+        border-bottom: 1px solid var(--border-faint) !important;
+    }
+    .scans-table tbody tr:last-child td { border-bottom: none !important; }
+    .scans-table tbody tr:hover { background: rgba(255,255,255,0.02) !important; }
+
+    .domain-code { font-family: var(--font-mono); font-size: 13px; color: var(--accent-cyan); }
+    .user-text { font-size: 12.5px; color: var(--text-secondary); }
+    .scan-ts { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); }
+
+    .grade-chip {
+        font-family: var(--font-display); font-size: 13px; font-weight: 800;
+        padding: 2px 9px; border-radius: var(--radius-sm); border: 1px solid; display: inline-block;
+    }
+    .grade-A { background:rgba(0,229,160,0.1);  color:var(--accent-green);  border-color:rgba(0,229,160,0.3); }
+    .grade-B { background:rgba(0,212,255,0.1);  color:var(--accent-cyan);   border-color:rgba(0,212,255,0.3); }
+    .grade-C { background:rgba(255,170,0,0.1);  color:var(--accent-amber);  border-color:rgba(255,170,0,0.3); }
+    .grade-D, .grade-F, .grade-NA { background:rgba(255,71,87,0.1); color:var(--accent-red); border-color:rgba(255,71,87,0.3); }
+
+    .cve-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .cve-crit { font-family:var(--font-mono); font-size:13px; font-weight:600; color:var(--accent-red); }
+    .cve-high { font-family:var(--font-mono); font-size:13px; font-weight:600; color:var(--accent-amber); }
+    .cve-sep  { color: var(--border-default); }
+    .cve-label { font-size: 11px; color: var(--text-muted); }
+
+    .sub-status {
+        font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; border: 1px solid;
+    }
+    .sub-ok   { background:rgba(0,229,160,0.08); color:var(--accent-green); border-color:rgba(0,229,160,0.2); }
+    .sub-warn { background:rgba(255,170,0,0.08); color:var(--accent-amber); border-color:rgba(255,170,0,0.2); }
+    .sub-zero { color: var(--text-muted); font-size: 12.5px; }
+
+    .btn-view {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 12px; font-weight: 500; padding: 5px 11px;
+        border-radius: var(--radius-sm); border: 1px solid rgba(0,212,255,0.2);
+        background: rgba(0,212,255,0.07); color: var(--accent-cyan);
+        text-decoration: none; transition: all 0.15s;
+    }
+    .btn-view:hover { background: rgba(0,212,255,0.14); color: var(--accent-cyan); }
+
+    .empty-state { text-align: center; padding: 60px 24px; }
+    .empty-icon { width: 52px; height: 52px; border-radius: var(--radius-lg); background: var(--bg-raised); border: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--text-muted); margin: 0 auto 14px; }
+    .empty-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
 
-    <div class="row mb-4 align-items-center">
-        <div class="col">
-            <h2 class="mb-1" style="color:#c9d1d9;">
-                <i class="fas fa-database me-2" style="color:#58a6ff;"></i>
-                Scan Records
-            </h2>
-            <p class="text-secondary mb-0">Recent scans across all users</p>
-        </div>
+<div class="page-header">
+    <div>
+        <div class="page-title">Scan Records</div>
+        <div class="page-subtitle">Recent scans across all users</div>
     </div>
-
-    <div class="card">
-        <div class="card-header py-3 d-flex justify-content-between align-items-center">
-            <h5 class="mb-0" style="color:#c9d1d9;">
-                <i class="fas fa-history me-2" style="color:#58a6ff;"></i>
-                Latest Scans
-            </h5>
-            <small class="text-secondary">{{ scans|length }} records</small>
-        </div>
-        
-        <div class="card-body p-0">
-            {% if scans %}
-            <div class="table-responsive">
-                <table class="table table-dark table-hover mb-0" style="--bs-table-bg: transparent;">
-                    <thead style="border-bottom: 1px solid #30363d;">
-                        <tr>
-                            <th class="py-3 px-4">Domain</th>
-                            <th class="py-3 px-4">User</th>
-                            <th class="py-3 px-4">Grade</th>
-                            <th class="py-3 px-4">CVEs</th>
-                            <th class="py-3 px-4">Tech</th>
-                            <th class="py-3 px-4">Subdomains</th>
-                            <th class="py-3 px-4">Scanned At</th>
-                            <th class="py-3 px-4">Action</th>
-                        </tr>
-                    </thead>
-
-                    <tbody>
-                        {% for scan in scans %}
-                        {% set cves = scan.cves or {} %}
-                        {% set headers = scan.headers or {} %}
-                        {% set grade = headers.header_grade if scan.headers else 'N/A' %}
-                        {% set tech_stack = scan.tech_stack or {} %}
-                        {% set subdomains = scan.subdomains or {} %}
-                        {% set sub_status = subdomains.get('status', 'unknown') %}
-                        {% set sub_total = subdomains.get('total_found') %}
-
-                        <tr style="border-bottom: 1px solid #30363d;">
-                            <td class="py-3 px-4">
-                                <span style="color:#58a6ff; font-weight:500;">
-                                    {{ scan.domain }}
-                                </span>
-                            </td>
-
-                            <td class="py-3 px-4">
-                                <span class="text-secondary">
-                                    {{ scan.username }}
-                                </span>
-                            </td>
-
-                            <td class="py-3 px-4">
-                                <span class="badge"
-                                    style="
-                                    {% if grade == 'A' %}background:#1c3d2a; color:#3fb950;
-                                    {% elif grade == 'B' %}background:#1c2d3d; color:#58a6ff;
-                                    {% elif grade == 'C' %}background:#3d2e1c; color:#d29922;
-                                    {% else %}background:#3d1c1c; color:#f85149;
-                                    {% endif %}
-                                    ">
-                                    {{ grade }}
-                                </span>
-                            </td>
-
-                            <td class="py-3 px-4">
-                                {% if cves.get('total', 0) == 0 %}
-                                    <span class="text-secondary small">None</span>
-                                {% else %}
-                                    <div class="d-flex align-items-center gap-2">
-                                        <span style="color:#f85149; font-weight:500;">
-                                            {{ cves.get('critical', 0) }}
-                                        </span>
-                                        <span class="text-secondary small">Critical</span>
-                                        <span class="text-secondary">|</span>
-                                        <span style="color:#d29922; font-weight:500;">
-                                            {{ cves.get('high', 0) }}
-                                        </span>
-                                        <span class="text-secondary small">High</span>
-                                    </div>
-                                {% endif %}
-                            </td>
-
-                            <td class="py-3 px-4">
-                                <span style="color:#c9d1d9;">
-                                    {{ tech_stack.technologies | length if tech_stack else 0 }}
-                                </span>
-                            </td>
-
-                            <td class="py-3 px-4">
-                                {% if sub_status == 'completed' %}
-                                    <span style="color:#3fb950; font-weight:500;">
-                                        {{ sub_total }}
-                                    </span>
-                                    <span class="text-secondary small">found</span>
-                                {% elif sub_status == 'completed_empty' %}
-                                    <span class="text-secondary small">0 found</span>
-                                {% elif sub_status == 'source_unavailable' %}
-                                    <span class="badge" style="background:#3d2e1c; color:#d29922;">
-                                        Source unavailable
-                                    </span>
-                                {% else %}
-                                    <span class="text-secondary small">Unknown</span>
-                                {% endif %}
-                            </td>
-
-                            <td class="py-3 px-4">
-                                <small class="text-secondary">
-                                    {{ scan.scanned_at.strftime('%Y-%m-%d %H:%M') if scan.scanned_at else 'N/A' }}
-                                </small>
-                            </td>
-
-                            <td class="py-3 px-4">
-                                <a href="{{ url_for('admin.view_scan', scan_id=scan._id) }}"
-                                   class="btn btn-sm btn-primary">
-                                    <i class="fas fa-eye me-1"></i>View
-                                </a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="text-center py-5">
-                <i class="fas fa-database fa-2x text-secondary mb-3"></i>
-                <p class="text-secondary">No scan records found</p>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary btn-sm" style="height:34px; display:inline-flex; align-items:center;">
+        <i class="fas fa-arrow-left me-2"></i>Back
+    </a>
 </div>
+
+<div class="scans-panel">
+    <div class="scans-panel-header">
+        <h6>
+            <i class="fas fa-database" style="color:var(--accent-cyan); font-size:13px;"></i>
+            Latest Scans
+            <span class="count-pill">{{ scans|length }}</span>
+        </h6>
+    </div>
+
+    {% if scans %}
+    <div class="table-responsive">
+        <table class="table mb-0 scans-table" style="--bs-table-bg:transparent;">
+            <thead>
+                <tr>
+                    <th>Domain</th>
+                    <th>User</th>
+                    <th>Grade</th>
+                    <th>CVEs</th>
+                    <th>Tech</th>
+                    <th>Subdomains</th>
+                    <th>Scanned At</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for scan in scans %}
+                {% set cves       = scan.cves or {} %}
+                {% set headers    = scan.headers or {} %}
+                {% set grade      = headers.header_grade if scan.headers else 'NA' %}
+                {% set tech_stack = scan.tech_stack or {} %}
+                {% set subdomains = scan.subdomains or {} %}
+                {% set sub_status = subdomains.get('status', 'unknown') %}
+                {% set sub_total  = subdomains.get('total_found') %}
+                <tr>
+                    <td><span class="domain-code">{{ scan.domain }}</span></td>
+                    <td><span class="user-text">{{ scan.username }}</span></td>
+                    <td>
+                        <span class="grade-chip grade-{{ grade }}">{{ grade }}</span>
+                    </td>
+                    <td>
+                        {% if cves.get('total', 0) == 0 %}
+                            <span style="font-size:12.5px; color:var(--text-muted); font-style:italic;">None</span>
+                        {% else %}
+                            <div class="cve-row">
+                                <span class="cve-crit">{{ cves.get('critical', 0) }}</span>
+                                <span class="cve-label">Crit</span>
+                                <span class="cve-sep">·</span>
+                                <span class="cve-high">{{ cves.get('high', 0) }}</span>
+                                <span class="cve-label">High</span>
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span style="font-family:var(--font-mono); font-size:13px; color:var(--text-secondary);">
+                            {{ tech_stack.technologies|length if tech_stack else 0 }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if sub_status == 'completed' %}
+                            <span class="sub-status sub-ok">{{ sub_total }} found</span>
+                        {% elif sub_status == 'completed_empty' %}
+                            <span class="sub-zero">0 found</span>
+                        {% elif sub_status == 'source_unavailable' %}
+                            <span class="sub-status sub-warn">Unavailable</span>
+                        {% else %}
+                            <span class="sub-zero">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="scan-ts">{{ scan.scanned_at.strftime('%Y-%m-%d %H:%M') if scan.scanned_at else '—' }}</span>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('admin.view_scan', scan_id=scan._id) }}" class="btn-view">
+                            <i class="fas fa-eye" style="font-size:11px;"></i>View
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon"><i class="fas fa-database"></i></div>
+        <div class="empty-title">No scan records found</div>
+    </div>
+    {% endif %}
+</div>
+
 {% endblock %}

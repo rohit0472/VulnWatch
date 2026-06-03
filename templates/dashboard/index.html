@@ -1,308 +1,684 @@
 {% extends 'base.html' %}
 {% block title %}Dashboard — VulnWatch{% endblock %}
+{% block breadcrumb %}Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ─── PAGE HEADER ─── */
+    .page-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        gap: 16px;
+    }
+
+    .page-title {
+        font-family: var(--font-display);
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: -0.3px;
+        line-height: 1.2;
+    }
+
+    .page-title span { color: var(--accent-cyan); }
+
+    .page-subtitle {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-top: 4px;
+    }
+
+    /* ─── TIP BANNER ─── */
+    .tip-banner {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        background: rgba(0,212,255,0.05);
+        border: 1px solid rgba(0,212,255,0.15);
+        border-left: 3px solid var(--accent-cyan);
+        border-radius: var(--radius-md);
+        padding: 11px 16px;
+        margin-bottom: 24px;
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+
+    .tip-banner i { color: var(--accent-cyan); margin-top: 1px; flex-shrink: 0; }
+    .tip-banner strong { color: var(--accent-cyan); }
+
+    /* ─── QUICK SCAN ─── */
+    .quick-scan-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+
+    .quick-scan-card .card-label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .quick-scan-card .card-label::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: var(--border-faint);
+    }
+
+    .scan-input-row {
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+    }
+
+    .scan-input-wrap {
+        flex: 1;
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .scan-input-wrap i {
+        position: absolute;
+        left: 12px;
+        color: var(--text-muted);
+        font-size: 13px;
+        pointer-events: none;
+    }
+
+    .scan-input-wrap .form-control {
+        padding-left: 36px !important;
+        height: 40px;
+        font-family: var(--font-mono) !important;
+        font-size: 13px !important;
+    }
+
+    .scan-hint {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 8px;
+    }
+
+    .scan-hint a { color: var(--accent-cyan); text-decoration: none; }
+    .scan-hint a:hover { text-decoration: underline; }
+
+    /* ─── QUICK RESULT ─── */
+    .result-panel {
+        margin-top: 16px;
+        background: var(--bg-raised);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+    }
+
+    .result-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .result-domain {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        color: var(--accent-cyan);
+    }
+
+    .result-url {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 2px;
+    }
+
+    .grade-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px; height: 44px;
+        border-radius: var(--radius-md);
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 800;
+        flex-shrink: 0;
+    }
+
+    .grade-A { background: rgba(0,229,160,0.12); color: var(--accent-green); border: 1px solid rgba(0,229,160,0.3); }
+    .grade-B { background: rgba(0,212,255,0.1); color: var(--accent-cyan); border: 1px solid rgba(0,212,255,0.3); }
+    .grade-C { background: rgba(255,170,0,0.1); color: var(--accent-amber); border: 1px solid rgba(255,170,0,0.3); }
+    .grade-D, .grade-F { background: rgba(255,71,87,0.1); color: var(--accent-red); border: 1px solid rgba(255,71,87,0.3); }
+
+    .result-body { padding: 16px; }
+
+    .risk-strip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: var(--radius-md);
+        margin-bottom: 14px;
+        border: 1px solid;
+        font-size: 13px;
+    }
+
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        margin-bottom: 14px;
+    }
+
+    .stat-cell {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-faint);
+        border-radius: var(--radius-md);
+        padding: 10px;
+        text-align: center;
+    }
+
+    .stat-cell .stat-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text-muted);
+        display: block;
+        margin-bottom: 5px;
+    }
+
+    .stat-cell .stat-value {
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .header-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+
+    .htag {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: var(--radius-sm);
+        border: 1px solid;
+    }
+
+    .htag-present { background: rgba(0,229,160,0.08); color: var(--accent-green); border-color: rgba(0,229,160,0.25); }
+    .htag-missing { background: rgba(255,71,87,0.08); color: var(--accent-red); border-color: rgba(255,71,87,0.25); }
+
+    .impact-list { margin-bottom: 14px; }
+    .impact-item {
+        display: flex; align-items: flex-start; gap: 8px;
+        font-size: 12.5px; color: var(--text-secondary);
+        padding: 3px 0;
+    }
+    .impact-item i { color: var(--accent-red); margin-top: 3px; font-size: 8px; flex-shrink: 0; }
+
+    .result-footer {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 10px 16px;
+        border-top: 1px solid var(--border-faint);
+        background: var(--bg-base);
+    }
+
+    .result-footer small { font-size: 12px; color: var(--text-muted); }
+
+    /* ─── FEATURE CARDS ─── */
+    .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .feature-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 20px;
+        transition: all 0.2s ease;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .feature-card:hover {
+        border-color: var(--border-default);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+
+    .feature-icon-wrap {
+        width: 42px; height: 42px;
+        border-radius: var(--radius-md);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 17px;
+        margin-bottom: 14px;
+        flex-shrink: 0;
+    }
+
+    .icon-blue { background: rgba(0,212,255,0.1); color: var(--accent-cyan); }
+    .icon-green { background: rgba(0,229,160,0.1); color: var(--accent-green); }
+    .icon-purple { background: rgba(167,139,250,0.1); color: var(--accent-purple); }
+
+    .feature-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 6px;
+    }
+
+    .feature-desc {
+        font-size: 12.5px;
+        color: var(--text-muted);
+        line-height: 1.55;
+        flex: 1;
+        margin-bottom: 16px;
+    }
+
+    /* ─── CVE TABLE ─── */
+    .cve-section {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+    }
+
+    .cve-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .cve-section-header h6 {
+        font-family: var(--font-display);
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .live-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        color: var(--accent-green);
+        background: rgba(0,229,160,0.08);
+        border: 1px solid rgba(0,229,160,0.2);
+        padding: 2px 8px;
+        border-radius: 99px;
+    }
+
+    .live-pill .live-dot {
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        background: var(--accent-green);
+        animation: pulse-dot 2s infinite;
+    }
+
+    .cve-id {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--accent-cyan);
+    }
+
+    .cve-desc {
+        font-size: 12.5px;
+        color: var(--text-secondary);
+        max-width: 400px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .score-val {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .sev-badge {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        text-transform: uppercase;
+    }
+
+    .sev-CRITICAL { background: rgba(255,71,87,0.15); color: var(--accent-red); border: 1px solid rgba(255,71,87,0.3); }
+    .sev-HIGH { background: rgba(255,170,0,0.12); color: var(--accent-amber); border: 1px solid rgba(255,170,0,0.3); }
+    .sev-MEDIUM { background: rgba(0,212,255,0.1); color: var(--accent-cyan); border: 1px solid rgba(0,212,255,0.25); }
+    .sev-LOW { background: rgba(0,229,160,0.08); color: var(--accent-green); border: 1px solid rgba(0,229,160,0.2); }
+    .sev-NA { background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid var(--border-faint); }
+
+    .cve-date { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+
+    .empty-state {
+        text-align: center;
+        padding: 48px 24px;
+        color: var(--text-muted);
+    }
+
+    .empty-state i { font-size: 28px; margin-bottom: 12px; display: block; }
+    .empty-state p { font-size: 13px; margin: 0; }
+
+    /* ─── SSL WARNING ─── */
+    .ssl-warn {
+        display: flex; align-items: center; gap: 8px;
+        background: rgba(255,170,0,0.07);
+        border: 1px solid rgba(255,170,0,0.25);
+        border-radius: var(--radius-md);
+        padding: 8px 12px;
+        font-size: 12.5px;
+        color: var(--accent-amber);
+        margin-bottom: 12px;
+    }
+
+    @media (max-width: 768px) {
+        .feature-grid { grid-template-columns: 1fr; }
+        .stat-grid { grid-template-columns: repeat(2,1fr); }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 
-<!-- Header -->
-<div class="row mb-4 align-items-center">
-    <div class="col">
-        <h2 class="mb-1">
-            <i class="fas fa-tachometer-alt me-3" style="color: #58a6ff;"></i>
-            Welcome back, <span style="color: #3fb950;">{{ username }}</span>
-        </h2>
-        <p class="text-secondary mb-0">VulnWatch Security Dashboard</p>
+<!-- Page Header -->
+<div class="page-header">
+    <div>
+        <div class="page-title">
+            Welcome back, <span>{{ username }}</span>
+        </div>
+        <div class="page-subtitle">Security operations dashboard · VulnWatch SIEM</div>
     </div>
 </div>
 
 <!-- Security Tip -->
-<div class="alert alert-info d-flex align-items-center mb-4" role="alert">
-    <i class="fas fa-lightbulb me-3 fs-5"></i>
+<div class="tip-banner">
+    <i class="fas fa-lightbulb fa-sm"></i>
     <div><strong>Security Tip:</strong> {{ tip }}</div>
 </div>
 
-<!-- Quick Scan Box -->
-<div class="card mb-4">
-    <div class="card-body p-4">
-        <h5 class="mb-3" style="color: #c9d1d9;">
-            <i class="fas fa-search me-2" style="color: #58a6ff;"></i>Quick Domain Scan
-        </h5>
-        <form method="POST" action="{{ url_for('dashboard.index') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="input-group">
-                <span class="input-group-text" style="background:#0d1117; border-color:#30363d; color:#8b949e;">
-                    <i class="fas fa-globe"></i>
-                </span>
+<!-- Quick Scan -->
+<div class="quick-scan-card">
+    <div class="card-label">
+        <i class="fas fa-bolt" style="color:var(--accent-cyan);"></i>
+        Quick Domain Scan
+    </div>
+
+    <form method="POST" action="{{ url_for('dashboard.index') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="scan-input-row">
+            <div class="scan-input-wrap">
+                <i class="fas fa-globe"></i>
                 <input type="text" name="domain" class="form-control"
-                       placeholder="Enter domain (e.g. example.com)"
+                       placeholder="example.com"
                        value="{{ quick_result.input_domain if quick_result else '' }}" required>
-                <button class="btn btn-primary" type="submit">
-                    <i class="fas fa-search me-2"></i>Quick Scan
-                </button>
             </div>
-        </form>
-        <small class="text-secondary mt-2 d-block">
-            Quick scan checks HTTPS and security headers only.
-            <a href="{{ url_for('scanner.scan') }}" style="color:#58a6ff;">Full scan →</a>
-        </small>
+            <button class="btn btn-primary" type="submit" style="height:40px; padding:0 20px; white-space:nowrap;">
+                <i class="fas fa-search me-2"></i>Quick Scan
+            </button>
+        </div>
+    </form>
 
-        <!-- Quick Scan Result -->
-{% if quick_result %}
-    {% if quick_result.get('error') %}
-    <div class="alert alert-danger mt-3 mb-0">
-        <i class="fas fa-exclamation-triangle me-2"></i>{{ quick_result.error }}
+    <div class="scan-hint">
+        Checks HTTPS &amp; security headers only.
+        <a href="{{ url_for('scanner.scan') }}">Run full scan →</a>
     </div>
-    {% else %}
-    <div class="mt-3 p-3 rounded" style="background:#0d1117; border:1px solid #30363d;">
 
-        <!-- Top Row — Grade + Domain -->
-        <div class="d-flex align-items-center justify-content-between mb-2">
-            <div>
-                <code style="color:#58a6ff; font-size:1rem;">{{ quick_result.domain }}</code>
-                <small class="text-secondary ms-2">{{ quick_result.headers.final_url }}</small>
-            </div>
-            <span class="badge fs-5 px-3 py-2"
-                style="background: {% if quick_result.headers.header_grade == 'A' %}#1c3d2a; color:#3fb950{% elif quick_result.headers.header_grade == 'B' %}#1c2d3d; color:#58a6ff{% elif quick_result.headers.header_grade == 'C' %}#3d2e1c; color:#d29922{% else %}#3d1c1c; color:#f85149{% endif %};">
-                Grade {{ quick_result.headers.header_grade }}
-            </span>
+    <!-- Quick Scan Result -->
+    {% if quick_result %}
+        {% if quick_result.get('error') %}
+        <div class="tip-banner mt-3" style="border-left-color:var(--accent-red); border-color:rgba(255,71,87,0.3); background:rgba(255,71,87,0.06); color:#ff7b88;">
+            <i class="fas fa-exclamation-triangle" style="color:var(--accent-red);"></i>
+            <div>{{ quick_result.error }}</div>
         </div>
-
-        <!-- Risk Message -->
-        {% if quick_result.risk %}
-        <div class="mb-3 p-2 rounded d-flex align-items-center"
-             style="background:#161b22; border-left: 3px solid {{ quick_result.risk.color }};">
-            <i class="fas fa-shield-alt me-2" style="color:{{ quick_result.risk.color }};"></i>
-            <strong style="color:{{ quick_result.risk.color }};">
-                {{ quick_result.risk.level }} —
-            </strong>
-            <span class="ms-1 text-secondary">{{ quick_result.risk.message }}</span>
-        </div>
-        {% endif %}
-
-        <!-- Stats Row -->
-        <div class="row text-center g-2 mb-3">
-            <div class="col-3">
-                <div class="p-2 rounded" style="background:#161b22; border:1px solid #30363d;">
-                    <small class="text-secondary d-block mb-1">HTTPS</small>
-                    {% if quick_result.headers.https %}
-                        <i class="fas fa-check-circle" style="color:#3fb950;"></i>
-                        <small style="color:#3fb950;"> Enabled</small>
-                    {% else %}
-                        <i class="fas fa-times-circle" style="color:#f85149;"></i>
-                        <small style="color:#f85149;"> Disabled</small>
-                    {% endif %}
+        {% else %}
+        <div class="result-panel">
+            <!-- Result Header -->
+            <div class="result-header">
+                <div>
+                    <div class="result-domain">{{ quick_result.domain }}</div>
+                    <div class="result-url">{{ quick_result.headers.final_url }}</div>
+                </div>
+                <div class="grade-badge grade-{{ quick_result.headers.header_grade }}">
+                    {{ quick_result.headers.header_grade }}
                 </div>
             </div>
-            <div class="col-3">
-                <div class="p-2 rounded" style="background:#161b22; border:1px solid #30363d;">
-                    <small class="text-secondary d-block mb-1">Redirect</small>
-                    {% if quick_result.headers.https_redirect %}
-                        <i class="fas fa-check-circle" style="color:#3fb950;"></i>
-                        <small style="color:#3fb950;"> Yes</small>
-                    {% else %}
-                        <i class="fas fa-times-circle" style="color:#f85149;"></i>
-                        <small style="color:#f85149;"> No</small>
-                    {% endif %}
+
+            <div class="result-body">
+
+                <!-- Risk Strip -->
+                {% if quick_result.risk %}
+                <div class="risk-strip"
+                     style="background:{{ quick_result.risk.color }}12; border-color:{{ quick_result.risk.color }}40; color:{{ quick_result.risk.color }};">
+                    <i class="fas fa-shield-alt"></i>
+                    <div>
+                        <strong>{{ quick_result.risk.level }}</strong>
+                        <span style="color:var(--text-secondary); font-weight:400;"> — {{ quick_result.risk.message }}</span>
+                    </div>
                 </div>
-            </div>
-            <div class="col-3">
-                <div class="p-2 rounded" style="background:#161b22; border:1px solid #30363d;">
-                    <small class="text-secondary d-block mb-1">Headers</small>
-                    <strong style="color:#3fb950;">{{ quick_result.headers.security_headers|length }}</strong>
-                    <small class="text-secondary"> / 6</small>
+                {% endif %}
+
+                <!-- Stats -->
+                <div class="stat-grid">
+                    <div class="stat-cell">
+                        <span class="stat-label">HTTPS</span>
+                        {% if quick_result.headers.https %}
+                            <span class="stat-value" style="color:var(--accent-green);">
+                                <i class="fas fa-check-circle"></i> Enabled
+                            </span>
+                        {% else %}
+                            <span class="stat-value" style="color:var(--accent-red);">
+                                <i class="fas fa-times-circle"></i> Disabled
+                            </span>
+                        {% endif %}
+                    </div>
+                    <div class="stat-cell">
+                        <span class="stat-label">Redirect</span>
+                        {% if quick_result.headers.https_redirect %}
+                            <span class="stat-value" style="color:var(--accent-green);"><i class="fas fa-check-circle"></i> Yes</span>
+                        {% else %}
+                            <span class="stat-value" style="color:var(--accent-red);"><i class="fas fa-times-circle"></i> No</span>
+                        {% endif %}
+                    </div>
+                    <div class="stat-cell">
+                        <span class="stat-label">Headers</span>
+                        <span class="stat-value" style="color:var(--accent-cyan);">
+                            {{ quick_result.headers.security_headers|length }}
+                            <span style="color:var(--text-muted); font-weight:400; font-size:12px;">/ 6</span>
+                        </span>
+                    </div>
+                    <div class="stat-cell">
+                        <span class="stat-label">Score</span>
+                        <span class="stat-value" style="color:{% if quick_result.headers.header_score >= 70 %}var(--accent-green){% elif quick_result.headers.header_score >= 40 %}var(--accent-amber){% else %}var(--accent-red){% endif %};">
+                            {{ quick_result.headers.header_score }}%
+                        </span>
+                    </div>
                 </div>
-            </div>
-            <div class="col-3">
-                <div class="p-2 rounded" style="background:#161b22; border:1px solid #30363d;">
-                    <small class="text-secondary d-block mb-1">Score</small>
-                    <strong style="color: {% if quick_result.headers.header_score >= 70 %}#3fb950{% elif quick_result.headers.header_score >= 40 %}#d29922{% else %}#f85149{% endif %};">
-                        {{ quick_result.headers.header_score }}%
-                    </strong>
+
+                <!-- SSL Warning -->
+                {% if quick_result.headers.ssl_issue %}
+                <div class="ssl-warn">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    SSL certificate issue detected on this domain.
                 </div>
+                {% endif %}
+
+                <!-- Misconfigurations -->
+                {% if quick_result.risk and quick_result.risk.impacts %}
+                <div style="margin-bottom:12px;">
+                    <div style="font-size:11px; font-weight:600; letter-spacing:0.6px; text-transform:uppercase; color:var(--accent-red); margin-bottom:6px;">
+                        <i class="fas fa-exclamation-triangle me-1"></i>Security Misconfigurations
+                    </div>
+                    <div class="impact-list">
+                        {% for impact in quick_result.risk.impacts %}
+                        <div class="impact-item">
+                            <i class="fas fa-circle"></i>
+                            <span>{{ impact }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Present Headers -->
+                {% if quick_result.headers.security_headers %}
+                <div style="margin-bottom:10px;">
+                    <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
+                        <i class="fas fa-check-circle me-1" style="color:var(--accent-green);"></i>Present Security Headers
+                    </div>
+                    <div class="header-tags">
+                        {% for header in quick_result.headers.security_headers %}
+                        <span class="htag htag-present">{{ header }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Missing Headers -->
+                {% if quick_result.headers.missing_headers %}
+                <div>
+                    <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
+                        <i class="fas fa-times-circle me-1" style="color:var(--accent-red);"></i>Missing Security Headers
+                    </div>
+                    <div class="header-tags">
+                        {% for header in quick_result.headers.missing_headers %}
+                        <span class="htag htag-missing">{{ header }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+            </div><!-- /.result-body -->
+
+            <div class="result-footer">
+                <small><i class="fas fa-info-circle me-1"></i>Full scan reveals detailed vulnerabilities &amp; attack surface</small>
+                <a href="{{ url_for('scanner.scan') }}?domain={{ quick_result.domain }}" class="btn btn-primary btn-sm">
+                    <i class="fas fa-search me-1"></i>Full Scan
+                </a>
             </div>
         </div>
-
-        <!-- SSL Warning -->
-        {% if quick_result.headers.ssl_issue %}
-        <div class="alert mb-3 py-2" style="background:#3d2e1c; border-color:#d29922; color:#d29922;">
-            <i class="fas fa-exclamation-triangle me-2"></i>
-            SSL certificate issue detected on this domain.
-        </div>
         {% endif %}
-
-        <!-- Security Misconfigurations -->
-        {% if quick_result.risk and quick_result.risk.impacts %}
-        <div class="mb-3">
-            <small class="d-block mb-2" style="color:#f85149;">
-                <i class="fas fa-exclamation-triangle me-1"></i>
-                <strong>Security Misconfigurations:</strong>
-            </small>
-            {% for impact in quick_result.risk.impacts %}
-            <div class="d-flex align-items-start mb-1">
-                <i class="fas fa-circle me-2 mt-1" style="color:#f85149; font-size:0.4rem;"></i>
-                <small class="text-secondary">{{ impact }}</small>
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        <!-- Present Headers -->
-        {% if quick_result.headers.security_headers %}
-        <div class="mb-3">
-            <small class="text-secondary d-block mb-2">
-                <i class="fas fa-check-circle me-1" style="color:#3fb950;"></i>
-                Present Security Headers:
-            </small>
-            <div class="d-flex flex-wrap gap-2">
-                {% for header in quick_result.headers.security_headers %}
-                <span class="badge" style="background:#1c3d2a; color:#3fb950;">{{ header }}</span>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Missing Headers -->
-        {% if quick_result.headers.missing_headers %}
-        <div class="mb-3">
-            <small class="text-secondary d-block mb-2">
-                <i class="fas fa-times-circle me-1" style="color:#f85149;"></i>
-                Missing Security Headers:
-            </small>
-            <div class="d-flex flex-wrap gap-2">
-                {% for header in quick_result.headers.missing_headers %}
-                <span class="badge" style="background:#3d1c1c; color:#f85149;">{{ header }}</span>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Full Scan CTA -->
-        <div class="d-flex justify-content-between align-items-center mt-3 pt-3"
-             style="border-top:1px solid #30363d;">
-            <small class="text-secondary">
-                <i class="fas fa-info-circle me-1"></i>
-                Run full scan → Get detailed vulnerabilities & attack surface
-            </small>
-            <a href="{{ url_for('scanner.scan') }}?domain={{ quick_result.domain }}"
-               class="btn btn-sm btn-primary">
-                <i class="fas fa-search me-1"></i>Full Scan
-            </a>
-        </div>
-    </div>
     {% endif %}
-{% endif %}
+</div>
 
 <!-- Feature Cards -->
-<div class="row g-4 mb-4">
-    <div class="col-md-4">
-        <div class="card h-100 text-center p-4">
-            <div class="mb-3">
-                <i class="fas fa-search fa-3x" style="color: #58a6ff;"></i>
-            </div>
-                <h5 class="card-title mb-2" style="color: #c9d1d9;">Domain Scanner</h5>
-                <p class="text-secondary mb-3">Scan domains for vulnerabilities and tech stack exposure</p>
-                <a href="{{ url_for('scanner.scan') }}" class="btn btn-primary">
-                <i class="fas fa-search me-2"></i>Scan Now
-                </a>
+<div class="feature-grid">
+    <div class="feature-card">
+        <div class="feature-icon-wrap icon-blue">
+            <i class="fas fa-search"></i>
         </div>
-    </div>
-    <div class="col-md-4">
-    <div class="card h-100 text-center p-4">
-        <div class="mb-3">
-            <i class="fas fa-eye fa-3x" style="color: #3fb950;"></i>
-        </div>
-            <h5 class="card-title mb-2" style="color: #c9d1d9;">Monitor Domains</h5>
-            <p class="text-secondary mb-3">24/7 monitoring with instant alerts on new CVEs</p>
-            <a href="{{ url_for('monitor.index') }}" class="btn btn-primary">
-                <i class="fas fa-eye me-2"></i>Monitor Now
-            </a>
-        </div>
-    </div>
-    <div class="col-md-4">
-    <div class="card h-100 text-center p-4">
-        
-        <div class="mb-2">
-            <i class="fas fa-flask fa-3x" style="color: #3fb950;"></i>
-        </div>
-
-        <h5 class="mb-1" style="color:#c9d1d9;">
-            Next Feature
-        </h5>
-
-        <p class="text-secondary mb-3">
-            Your ideas shape VulnWatch
-        </p>
-
-        <a href="https://docs.google.com/forms/d/e/1FAIpQLSf5VE3jWFWduuY6nmOFzcPJEfZCc9WfaowooJN_3Ab8wyBt3w/viewform?usp=header" target="_blank" class="btn btn-primary">
-            <i class="fas fa-comment-dots me-1"></i>
-            Suggest Feature
+        <div class="feature-title">Domain Scanner</div>
+        <div class="feature-desc">Deep-scan domains for vulnerabilities, exposed services, and tech stack fingerprinting.</div>
+        <a href="{{ url_for('scanner.scan') }}" class="btn btn-primary btn-sm" style="align-self:flex-start;">
+            <i class="fas fa-search me-1"></i>Scan Now
         </a>
-
-    </div>                     
-</div>
-</div>
-</div>
-
-<!-- Latest CVEs -->
-<div class="card">
-    <div class="card-header d-flex align-items-center justify-content-between py-3">
-        <h5 class="mb-0" style="color: #c9d1d9;">
-    <i class="fas fa-bug me-2" style="color: #f85149;"></i>Latest CVEs
-</h5>
-        <small class="text-secondary">Live from NIST NVD</small>
     </div>
-    <div class="card-body p-0">
-        {% if cves %}
-            <div class="table-responsive">
-                <table class="table table-dark table-hover mb-0" style="--bs-table-bg: transparent;">
-                    <thead style="border-bottom: 1px solid #30363d;">
-                        <tr>
-                            <th class="py-3 px-4">CVE ID</th>
-                            <th class="py-3 px-4">Description</th>
-                            <th class="py-3 px-4">Score</th>
-                            <th class="py-3 px-4">Severity</th>
-                            <th class="py-3 px-4">Published</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for cve in cves %}
-                        <tr style="border-bottom: 1px solid #30363d;">
-                            <td class="py-3 px-4">
-                                <span style="color: #58a6ff; font-family: monospace;">{{ cve.id }}</span>
-                            </td>
-                            <td class="py-3 px-4">
-                                <small class="text-secondary">{{ cve.description }}</small>
-                            </td>
-                            <td class="py-3 px-4">
-                                {% if cve.score %}
-                                    <span class="fw-bold"
-                                        style="color: {% if cve.score >= 9 %}#f85149{% elif cve.score >= 7 %}#d29922{% elif cve.score >= 4 %}#58a6ff{% else %}#3fb950{% endif %};">
-                                        {{ cve.score }}
-                                    </span>
-                                {% else %}
-                                    <span class="text-secondary">N/A</span>
-                                {% endif %}
-                            </td>
-                            <td class="py-3 px-4">
-                                <span class="badge"
-                                    style="background-color: {% if cve.severity == 'CRITICAL' %}#3d1c1c; color:#f85149{% elif cve.severity == 'HIGH' %}#3d2e1c; color:#d29922{% elif cve.severity == 'MEDIUM' %}#1c2d3d; color:#58a6ff{% elif cve.severity == 'LOW' %}#1c3d2a; color:#3fb950{% else %}#21262d; color:#8b949e{% endif %};">
-                                    {{ cve.severity }}
-                                </span>
-                            </td>
-                            <td class="py-3 px-4">
-                                <small class="text-secondary">{{ cve.published }}</small>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="text-center py-5">
-                <i class="fas fa-satellite-dish fa-2x text-secondary mb-3"></i>
-                <p class="text-secondary">Unable to fetch CVEs right now. Try refreshing.</p>
-            </div>
-        {% endif %}
+
+    <div class="feature-card">
+        <div class="feature-icon-wrap icon-green">
+            <i class="fas fa-satellite-dish"></i>
+        </div>
+        <div class="feature-title">Continuous Monitor</div>
+        <div class="feature-desc">24/7 domain surveillance with instant CVE alerts and security posture tracking.</div>
+        <a href="{{ url_for('monitor.index') }}" class="btn btn-primary btn-sm" style="align-self:flex-start;">
+            <i class="fas fa-eye me-1"></i>Monitor Now
+        </a>
     </div>
+
+    <div class="feature-card">
+        <div class="feature-icon-wrap icon-purple">
+            <i class="fas fa-flask"></i>
+        </div>
+        <div class="feature-title">Shape VulnWatch</div>
+        <div class="feature-desc">Your ideas define our roadmap. Tell us what feature to build next.</div>
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLSf5VE3jWFWduuY6nmOFzcPJEfZCc9WfaowooJN_3Ab8wyBt3w/viewform?usp=header"
+           target="_blank" class="btn btn-outline-secondary btn-sm" style="align-self:flex-start;">
+            <i class="fas fa-comment-dots me-1"></i>Suggest Feature
+        </a>
+    </div>
+</div>
+
+<!-- CVE Feed -->
+<div class="cve-section">
+    <div class="cve-section-header">
+        <h6>
+            <i class="fas fa-bug" style="color:var(--accent-red);"></i>
+            Latest CVEs
+        </h6>
+        <div class="live-pill">
+            <div class="live-dot"></div>
+            LIVE · NIST NVD
+        </div>
+    </div>
+
+    {% if cves %}
+    <div class="table-responsive">
+        <table class="table mb-0" style="--bs-table-bg: transparent; --bs-table-hover-bg: rgba(255,255,255,0.025);">
+            <thead>
+                <tr>
+                    <th>CVE ID</th>
+                    <th>Description</th>
+                    <th>Score</th>
+                    <th>Severity</th>
+                    <th>Published</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cve in cves %}
+                <tr>
+                    <td>
+                        <span class="cve-id">{{ cve.id }}</span>
+                    </td>
+                    <td>
+                        <span class="cve-desc">{{ cve.description }}</span>
+                    </td>
+                    <td>
+                        {% if cve.score %}
+                            <span class="score-val"
+                                  style="color:{% if cve.score >= 9 %}var(--accent-red){% elif cve.score >= 7 %}var(--accent-amber){% elif cve.score >= 4 %}var(--accent-cyan){% else %}var(--accent-green){% endif %};">
+                                {{ cve.score }}
+                            </span>
+                        {% else %}
+                            <span class="cve-date">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="sev-badge sev-{{ cve.severity if cve.severity else 'NA' }}">
+                            {{ cve.severity if cve.severity else 'N/A' }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="cve-date">{{ cve.published }}</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-satellite-dish"></i>
+        <p>Unable to fetch CVE feed right now. Try refreshing.</p>
+    </div>
+    {% endif %}
 </div>
 
 {% endblock %}

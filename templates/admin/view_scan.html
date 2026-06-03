@@ -1,309 +1,409 @@
 {% extends "base.html" %}
+{% block title %}Scan Details — VulnWatch{% endblock %}
+{% block breadcrumb %}Admin · Scan Details{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
+    .page-title  { font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
+    .page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+    /* ─── DOMAIN HERO ─── */
+    .domain-hero {
+        background: var(--bg-surface); border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg); padding: 20px 24px;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .domain-name {
+        font-family: var(--font-mono); font-size: 20px; font-weight: 600;
+        color: var(--accent-cyan); display: block; margin-bottom: 4px;
+    }
+    .domain-ts { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+
+    /* ─── SECTION PANELS ─── */
+    .section-panel {
+        background: var(--bg-surface); border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 18px;
+    }
+    .section-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 13px 20px; border-bottom: 1px solid var(--border-subtle);
+    }
+    .section-header h6 {
+        font-size: 13.5px; font-weight: 600; color: var(--text-primary); margin: 0;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .section-body { padding: 20px; }
+
+    /* ─── GRADE CHIP ─── */
+    .grade-chip {
+        font-family: var(--font-display); font-size: 16px; font-weight: 800;
+        padding: 4px 14px; border-radius: var(--radius-md); border: 1px solid; display: inline-block;
+    }
+    .grade-A { background:rgba(0,229,160,0.1); color:var(--accent-green); border-color:rgba(0,229,160,0.3); }
+    .grade-B { background:rgba(0,212,255,0.1); color:var(--accent-cyan);  border-color:rgba(0,212,255,0.3); }
+    .grade-C { background:rgba(255,170,0,0.1); color:var(--accent-amber); border-color:rgba(255,170,0,0.3); }
+    .grade-D, .grade-F { background:rgba(255,71,87,0.1); color:var(--accent-red); border-color:rgba(255,71,87,0.3); }
+
+    /* ─── CVE SUMMARY ROW ─── */
+    .cve-summary {
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+        padding: 12px 16px; background: var(--bg-raised);
+        border: 1px solid var(--border-faint); border-radius: var(--radius-md);
+        margin-bottom: 16px; font-size: 13.5px;
+    }
+    .cve-summary .val { font-family: var(--font-mono); font-weight: 700; }
+    .cve-summary .sep { color: var(--border-default); }
+
+    /* ─── CVE TABLES ─── */
+    .cve-table th {
+        font-size: 10.5px !important; font-weight: 600 !important;
+        letter-spacing: 0.8px !important; text-transform: uppercase !important;
+        color: var(--text-muted) !important; padding: 8px 14px !important;
+        background: var(--bg-base) !important;
+        border-bottom: 1px solid var(--border-subtle) !important;
+    }
+    .cve-table td { padding: 10px 14px !important; vertical-align: middle; border-bottom: 1px solid var(--border-faint) !important; }
+    .cve-table tbody tr:last-child td { border-bottom: none !important; }
+    .cve-link     { font-family:var(--font-mono); font-size:12px; color:var(--accent-cyan); text-decoration:none; }
+    .cve-link:hover { text-decoration: underline; }
+    .cve-link-dim { font-family:var(--font-mono); font-size:12px; color:var(--text-muted); text-decoration:none; }
+    .cve-link-dim:hover { color:var(--text-secondary); text-decoration:underline; }
+
+    .sev-badge { font-size:10px; font-weight:700; letter-spacing:0.5px; padding:2px 7px; border-radius:4px; text-transform:uppercase; border:1px solid; }
+    .sev-CRITICAL { background:rgba(255,71,87,0.12); color:var(--accent-red);   border-color:rgba(255,71,87,0.3); }
+    .sev-HIGH     { background:rgba(255,170,0,0.1);  color:var(--accent-amber); border-color:rgba(255,170,0,0.3); }
+    .sev-MEDIUM   { background:rgba(0,212,255,0.08); color:var(--accent-cyan);  border-color:rgba(0,212,255,0.25); }
+    .sev-LOW      { background:rgba(0,229,160,0.07); color:var(--accent-green); border-color:rgba(0,229,160,0.2); }
+    .sev-NA       { background:rgba(255,255,255,0.04); color:var(--text-muted); border-color:var(--border-faint); }
+
+    .exploit-link {
+        font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:4px;
+        background:rgba(255,71,87,0.1); color:var(--accent-red); border:1px solid rgba(255,71,87,0.25);
+        text-decoration:none; display:inline-flex; align-items:center; gap:4px;
+    }
+    .exploit-link:hover { background:rgba(255,71,87,0.18); color:var(--accent-red); }
+
+    .score-val { font-family:var(--font-mono); font-size:13px; font-weight:600; }
+    .kev-chip  { font-size:9.5px; font-weight:700; letter-spacing:0.5px; padding:2px 6px; border-radius:3px; background:rgba(255,71,87,0.12); color:var(--accent-red); border:1px solid rgba(255,71,87,0.3); }
+
+    /* ─── TECH TAGS ─── */
+    .tech-tag {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 12px; padding: 4px 10px; border-radius: var(--radius-sm);
+        background: var(--bg-raised); border: 1px solid var(--border-faint);
+        color: var(--text-secondary);
+    }
+    .tech-tag .version { font-family:var(--font-mono); font-size:10.5px; color:var(--accent-cyan); }
+
+    /* ─── EXPLOIT ITEMS ─── */
+    .exploit-item {
+        background: var(--bg-raised); border: 1px solid rgba(255,71,87,0.15);
+        border-radius: var(--radius-md); padding: 14px; margin-bottom: 10px;
+    }
+    .exploit-item:last-child { margin-bottom: 0; }
+
+    /* ─── SUBDOMAINS ─── */
+    .sub-chip {
+        font-family: var(--font-mono); font-size: 12px; padding: 5px 10px;
+        background: var(--bg-raised); border: 1px solid var(--border-faint);
+        border-radius: var(--radius-sm); color: var(--text-secondary);
+    }
+
+    /* ─── INFO BANNER ─── */
+    .info-banner {
+        display:flex; align-items:flex-start; gap:10px;
+        background:rgba(0,212,255,0.05); border:1px solid rgba(0,212,255,0.15);
+        border-left:3px solid var(--accent-cyan); border-radius:var(--radius-md);
+        padding:10px 14px; font-size:12.5px; color:var(--text-secondary); margin-bottom:16px;
+    }
+    .info-banner i { font-size:12px; flex-shrink:0; margin-top:1px; }
+
+    .section-label {
+        font-size:11px; font-weight:600; letter-spacing:0.6px; text-transform:uppercase;
+        color:var(--text-muted); margin-bottom:10px;
+        display:flex; align-items:center; gap:6px;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
 
-    <!-- Header -->
-    <div class="mb-4">
-        <h2 style="color:#c9d1d9;">
-            <i class="fas fa-search me-2" style="color:#58a6ff;"></i>
-            Scan Details
-        </h2>
-        <p class="text-secondary mb-0">Full scan breakdown</p>
+<div class="page-header">
+    <div>
+        <div class="page-title">Scan Details</div>
+        <div class="page-subtitle">Full breakdown for {{ scan.domain }}</div>
     </div>
+    <a href="{{ url_for('admin.scans') }}" class="btn btn-outline-secondary btn-sm" style="height:34px; display:inline-flex; align-items:center;">
+        <i class="fas fa-arrow-left me-2"></i>Back to Records
+    </a>
+</div>
 
-    <!-- Domain -->
-    <div class="card mb-3">
-        <div class="card-body">
-            <h4 style="color:#58a6ff; font-weight:500;">
-                {{ scan.domain }}
-            </h4>
-            <small style="color:#8b949e;">
-                Scanned at:
-                {{ scan.scanned_at_ist.strftime('%Y-%m-%d %H:%M') if scan.scanned_at_ist else 'N/A' }}
-            </small>
+<!-- Domain Hero -->
+<div class="domain-hero">
+    <div>
+        <span class="domain-name">{{ scan.domain }}</span>
+        <span class="domain-ts">
+            <i class="fas fa-clock me-1"></i>
+            Scanned: {{ scan.scanned_at_ist.strftime('%Y-%m-%d %H:%M IST') if scan.scanned_at_ist else 'N/A' }}
+        </span>
+    </div>
+    {% if scan.headers %}
+    <span class="grade-chip grade-{{ scan.headers.header_grade }}">
+        Grade {{ scan.headers.header_grade if scan.headers else 'N/A' }}
+    </span>
+    {% endif %}
+</div>
+
+<!-- Security Headers -->
+<div class="section-panel">
+    <div class="section-header">
+        <h6><i class="fas fa-lock" style="color:var(--accent-cyan);"></i>Security Headers</h6>
+        {% if scan.headers %}
+        <span class="grade-chip grade-{{ scan.headers.header_grade }}" style="font-size:12px; padding:2px 10px;">
+            {{ scan.headers.header_score }}% · Grade {{ scan.headers.header_grade }}
+        </span>
+        {% endif %}
+    </div>
+    <div class="section-body">
+        {% if scan.headers %}
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px;">
+            <div style="background:var(--bg-raised); border:1px solid var(--border-faint); border-radius:var(--radius-md); padding:10px; text-align:center;">
+                <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-muted); display:block; margin-bottom:5px;">HTTPS</span>
+                {% if scan.headers.https %}<span style="color:var(--accent-green); font-size:13px; font-weight:600;"><i class="fas fa-check-circle me-1"></i>Enabled</span>
+                {% else %}<span style="color:var(--accent-red); font-size:13px; font-weight:600;"><i class="fas fa-times-circle me-1"></i>Disabled</span>{% endif %}
+            </div>
+            <div style="background:var(--bg-raised); border:1px solid var(--border-faint); border-radius:var(--radius-md); padding:10px; text-align:center;">
+                <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-muted); display:block; margin-bottom:5px;">Redirect</span>
+                {% if scan.headers.https_redirect %}<span style="color:var(--accent-green); font-size:13px; font-weight:600;"><i class="fas fa-check-circle me-1"></i>Yes</span>
+                {% else %}<span style="color:var(--accent-red); font-size:13px; font-weight:600;"><i class="fas fa-times-circle me-1"></i>No</span>{% endif %}
+            </div>
+            <div style="background:var(--bg-raised); border:1px solid var(--border-faint); border-radius:var(--radius-md); padding:10px; text-align:center;">
+                <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-muted); display:block; margin-bottom:5px;">SSL Issue</span>
+                {% if scan.headers.ssl_issue %}<span style="color:var(--accent-amber); font-size:13px; font-weight:600;"><i class="fas fa-exclamation-triangle me-1"></i>Detected</span>
+                {% else %}<span style="color:var(--accent-green); font-size:13px; font-weight:600;"><i class="fas fa-check-circle me-1"></i>None</span>{% endif %}
+            </div>
         </div>
+        {% endif %}
     </div>
+</div>
 
-    <!-- Security Headers -->
-    <div class="card mb-3">
-        <div class="card-body">
-            <h5 style="color:#c9d1d9;">Security Headers</h5>
-            <span class="badge mt-2"
-                style="
-                {% if scan.headers.header_grade == 'A' %}background:#1c3d2a; color:#3fb950;
-                {% elif scan.headers.header_grade == 'B' %}background:#1c2d3d; color:#58a6ff;
-                {% elif scan.headers.header_grade == 'C' %}background:#3d2e1c; color:#d29922;
-                {% else %}background:#3d1c1c; color:#f85149;
-                {% endif %}
-                ">
-                Grade {{ scan.headers.header_grade if scan.headers else 'N/A' }}
+<!-- Technologies -->
+<div class="section-panel">
+    <div class="section-header">
+        <h6><i class="fas fa-layer-group" style="color:var(--accent-cyan);"></i>Technologies</h6>
+        {% if scan.tech_stack %}
+        <span style="font-size:11px; padding:1px 7px; border-radius:99px; background:rgba(0,212,255,0.08); color:var(--accent-cyan); border:1px solid rgba(0,212,255,0.2);">
+            {{ scan.tech_stack.technologies|length }}
+        </span>
+        {% endif %}
+    </div>
+    <div class="section-body">
+        {% if scan.tech_stack and scan.tech_stack.technologies %}
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            {% for tech in scan.tech_stack.technologies %}
+            <span class="tech-tag">
+                <i class="fas fa-cube" style="font-size:10px; color:var(--accent-cyan);"></i>
+                {{ tech.name }}
+                {% if tech.version %}<span class="version">{{ tech.version }}</span>{% endif %}
             </span>
-        </div>
-    </div>
-
-    <!-- Technologies -->
-    <div class="card mb-3">
-        <div class="card-body">
-            <h5 style="color:#c9d1d9;">Technologies</h5>
-            <div class="mt-2">
-                {% for tech in scan.tech_stack.technologies %}
-                <span class="badge me-2 mb-2" style="background:#21262d; color:#c9d1d9;">
-                    {{ tech.name }}{% if tech.version %} {{ tech.version }}{% endif %}
-                </span>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
-
-    <!-- Vulnerabilities -->
-    <div class="card mb-3">
-        <div class="card-body">
-            <h5 style="color:#c9d1d9;">Vulnerabilities</h5>
-            <div class="mt-2 mb-3">
-                <span style="color:#f85149; font-weight:500;">
-                    {{ scan.cves.total if scan.cves else 0 }}
-                </span>
-                <span style="color:#8b949e;"> Total CVEs —</span>
-                <span style="color:#3fb950; font-weight:500; ms-1">
-                    {{ scan.cves.high_confidence if scan.cves else 0 }}
-                </span>
-                <span style="color:#8b949e;"> Verified,</span>
-                <span style="color:#d29922; font-weight:500; ms-1">
-                    {{ (scan.cves.medium_confidence + scan.cves.low_confidence) if scan.cves else 0 }}
-                </span>
-                <span style="color:#8b949e;"> Possible</span>
-            </div>
-
-            {% if scan.cves and scan.cves.cves %}
-                {% set verified = scan.cves.cves | selectattr('confidence','equalto','high') | list %}
-                {% set possible = scan.cves.cves | selectattr('confidence','in',['medium','low']) | list %}
-
-                {% if verified %}
-                <h6 style="color:#3fb950;" class="mb-2">
-                    <i class="fas fa-check-circle me-1"></i>Verified ({{ verified|length }})
-                </h6>
-                <div class="table-responsive mb-3">
-                    <table class="table table-dark table-sm mb-0" style="--bs-table-bg:transparent;">
-                        <thead style="border-bottom:1px solid #30363d;">
-                            <tr>
-                                <th class="py-2 px-3">CVE ID</th>
-                                <th class="py-2 px-3">Technology</th>
-                                <th class="py-2 px-3">Severity</th>
-                                <th class="py-2 px-3">Score</th>
-                                <th class="py-2 px-3">Exploit</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for cve in verified %}
-                            <tr style="border-bottom:1px solid #21262d;">
-                                <td class="py-2 px-3">
-                                    <a href="{{ cve.url }}" target="_blank"
-                                       style="color:#58a6ff; font-family:monospace; text-decoration:none;">
-                                        {{ cve.id }}
-                                    </a>
-                                </td>
-                                <td class="py-2 px-3">
-                                    <span style="color:#c9d1d9;">{{ cve.technology }}</span>
-                                    {% if cve.version %}
-                                    <span class="badge ms-1" style="background:#1c2d3d; color:#58a6ff;">
-                                        {{ cve.version }}
-                                    </span>
-                                    {% endif %}
-                                </td>
-                                <td class="py-2 px-3">
-                                    {% set sev = cve.severity %}
-                                    {% set sbg = '#3d1c1c' if sev=='CRITICAL' else '#3d2e1c' if sev=='HIGH' else '#1c2d3d' if sev=='MEDIUM' else '#1c3d2a' if sev=='LOW' else '#21262d' %}
-                                    {% set sc  = '#f85149' if sev=='CRITICAL' else '#d29922' if sev=='HIGH' else '#58a6ff' if sev=='MEDIUM' else '#3fb950' if sev=='LOW' else '#8b949e' %}
-                                    <span class="badge" style="background:{{ sbg }}; color:{{ sc }};">
-                                        {{ sev }}
-                                    </span>
-                                </td>
-                                <td class="py-2 px-3">
-                                    <span style="color:{% if cve.score and cve.score >= 9 %}#f85149{% elif cve.score and cve.score >= 7 %}#d29922{% elif cve.score %}#58a6ff{% else %}#8b949e{% endif %};">
-                                        {{ cve.score if cve.score else 'N/A' }}
-                                    </span>
-                                </td>
-                                <td class="py-2 px-3">
-                                    {% if cve.exploit_available %}
-                                        {% for exploit in cve.exploit_urls %}
-                                        <a href="{{ exploit.url }}" target="_blank"
-                                           class="badge text-decoration-none d-inline-block mb-1"
-                                           style="background:#3d1c1c; color:#f85149;"
-                                           title="{{ exploit.title }}">
-                                            <i class="fas fa-fire me-1"></i>Exploit
-                                        </a>
-                                        {% endfor %}
-                                    {% else %}
-                                        <span class="text-secondary">—</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% endif %}
-
-                {% if possible %}
-                <h6 style="color:#d29922;" class="mb-2">
-                    <i class="fas fa-exclamation-triangle me-1"></i>
-                    Possible ({{ possible|length }})
-                    <small class="text-secondary ms-1" style="font-weight:normal; font-size:0.75rem;">
-                        — keyword-matched, may include false positives
-                    </small>
-                </h6>
-                <div class="table-responsive">
-                    <table class="table table-dark table-sm mb-0"
-                           style="--bs-table-bg:transparent; opacity:0.85;">
-                        <thead style="border-bottom:1px solid #30363d;">
-                            <tr>
-                                <th class="py-2 px-3">CVE ID</th>
-                                <th class="py-2 px-3">Technology</th>
-                                <th class="py-2 px-3">Severity</th>
-                                <th class="py-2 px-3">Score</th>
-                                <th class="py-2 px-3">Exploit</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for cve in possible[:30] %}
-                            <tr style="border-bottom:1px solid #21262d;">
-                                <td class="py-2 px-3">
-                                    <a href="{{ cve.url }}" target="_blank"
-                                       style="color:#8b949e; font-family:monospace; text-decoration:none;">
-                                        {{ cve.id }}
-                                    </a>
-                                </td>
-                                <td class="py-2 px-3">
-                                    <span class="text-secondary">{{ cve.technology }}</span>
-                                </td>
-                                <td class="py-2 px-3">
-                                    <span class="badge" style="background:#21262d; color:#8b949e;">
-                                        {{ cve.severity }}
-                                    </span>
-                                </td>
-                                <td class="py-2 px-3">
-                                    <span style="color:#8b949e;">
-                                        {{ cve.score if cve.score else 'N/A' }}
-                                    </span>
-                                </td>
-                                <td class="py-2 px-3">
-                                    {% if cve.exploit_available %}
-                                        {% for exploit in cve.exploit_urls %}
-                                        <a href="{{ exploit.url }}" target="_blank"
-                                           class="badge text-decoration-none d-inline-block mb-1"
-                                           style="background:#3d1c1c; color:#f85149;"
-                                           title="{{ exploit.title }}">
-                                            <i class="fas fa-fire me-1"></i>Exploit
-                                        </a>
-                                        {% endfor %}
-                                    {% else %}
-                                        <span class="text-secondary">—</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                            {% if possible|length > 30 %}
-                            <tr>
-                                <td colspan="5" class="py-2 px-3 text-center">
-                                    <small class="text-secondary">
-                                        Showing 30 of {{ possible|length }} possible CVEs
-                                    </small>
-                                </td>
-                            </tr>
-                            {% endif %}
-                        </tbody>
-                    </table>
-                </div>
-                {% endif %}
-
-            {% else %}
-            <p class="text-secondary mb-0 mt-2">No CVEs found for this scan.</p>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- Exploits Summary -->
-    {% if scan.cves and scan.cves.cves %}
-    {% set exploit_count = namespace(n=0) %}
-    {% for c in scan.cves.cves %}
-        {% if c.exploit_available %}{% set exploit_count.n = exploit_count.n + 1 %}{% endif %}
-    {% endfor %}
-    {% if exploit_count.n > 0 %}
-    <div class="card mb-3" style="border-color:#f85149;">
-        <div class="card-body">
-            <h5 style="color:#f85149;">
-                <i class="fas fa-fire me-2"></i>
-                {{ exploit_count.n }} Public Exploit{{ 's' if exploit_count.n > 1 else '' }} Found
-            </h5>
-            <p class="text-secondary mb-3" style="font-size:0.875rem;">
-                The following CVEs have publicly available exploit code on Exploit-DB.
-                These should be treated as highest priority for remediation.
-            </p>
-            {% for cve in scan.cves.cves %}
-            {% if cve.exploit_available %}
-            <div class="p-3 rounded mb-2" style="background:#0d1117; border:1px solid #3d1c1c;">
-                <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
-                    <div>
-                        <a href="{{ cve.url }}" target="_blank"
-                           style="color:#f85149; font-family:monospace; text-decoration:none; font-weight:600;">
-                            {{ cve.id }}
-                        </a>
-                        <span class="badge ms-2" style="background:#21262d; color:#8b949e;">
-                            {{ cve.technology }}
-                        </span>
-                        {% set sev = cve.severity %}
-                        {% set sbg = '#3d1c1c' if sev=='CRITICAL' else '#3d2e1c' if sev=='HIGH' else '#1c2d3d' if sev=='MEDIUM' else '#1c3d2a' if sev=='LOW' else '#21262d' %}
-                        {% set sc  = '#f85149' if sev=='CRITICAL' else '#d29922' if sev=='HIGH' else '#58a6ff' if sev=='MEDIUM' else '#3fb950' if sev=='LOW' else '#8b949e' %}
-                        <span class="badge ms-1" style="background:{{ sbg }}; color:{{ sc }};">
-                            {{ sev }}{% if cve.score %} {{ cve.score }}{% endif %}
-                        </span>
-                    </div>
-                    <div class="d-flex flex-wrap gap-1">
-                        {% for exploit in cve.exploit_urls %}
-                        <a href="{{ exploit.url }}" target="_blank"
-                           class="badge text-decoration-none"
-                           style="background:#3d1c1c; color:#f85149;">
-                            <i class="fas fa-fire me-1"></i>Exploit-DB
-                        </a>
-                        {% endfor %}
-                    </div>
-                </div>
-                {% if cve.exploit_urls %}
-                <small class="text-secondary d-block mt-1">
-                    {{ cve.exploit_urls[0].title }}
-                </small>
-                {% endif %}
-            </div>
-            {% endif %}
             {% endfor %}
         </div>
+        {% else %}
+        <p style="font-size:13px; color:var(--text-muted); margin:0;">No technologies detected.</p>
+        {% endif %}
     </div>
-    {% endif %}
-    {% endif %}
-
-    <!-- Subdomains -->
-    <div class="card mb-3">
-        <div class="card-body">
-            <h5 style="color:#c9d1d9;">Subdomains
-                {% if scan.subdomains %}
-                <span class="badge ms-2 bg-secondary">{{ scan.subdomains.total_found }}</span>
-                {% endif %}
-            </h5>
-            <div class="mt-2">
-                {% if scan.subdomains and scan.subdomains.subdomains %}
-                    {% for sub in scan.subdomains.subdomains %}
-                    <div style="color:#c9d1d9; font-family:monospace; font-size:0.875rem;"
-                         class="mb-1">
-                        {{ sub }}
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <p class="text-secondary mb-0">No subdomains found.</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
 </div>
+
+<!-- Vulnerabilities -->
+<div class="section-panel">
+    <div class="section-header">
+        <h6><i class="fas fa-bug" style="color:var(--accent-red);"></i>Vulnerabilities</h6>
+        {% if scan.cves %}
+        <div style="display:flex; gap:6px;">
+            <span class="sev-badge" style="background:rgba(0,229,160,0.08); color:var(--accent-green); border-color:rgba(0,229,160,0.2);">{{ scan.cves.high_confidence if scan.cves else 0 }} Verified</span>
+            <span class="sev-badge sev-NA">{{ (scan.cves.medium_confidence + scan.cves.low_confidence) if scan.cves else 0 }} Possible</span>
+        </div>
+        {% endif %}
+    </div>
+    <div class="section-body">
+        {% if scan.cves %}
+        <div class="cve-summary">
+            <span class="val" style="color:var(--accent-red);">{{ scan.cves.total if scan.cves else 0 }}</span>
+            <span style="color:var(--text-muted);">Total</span>
+            <span class="sep">·</span>
+            <span class="val" style="color:var(--accent-green);">{{ scan.cves.high_confidence if scan.cves else 0 }}</span>
+            <span style="color:var(--text-muted);">Verified</span>
+            <span class="sep">·</span>
+            <span class="val" style="color:var(--accent-amber);">{{ (scan.cves.medium_confidence + scan.cves.low_confidence) if scan.cves else 0 }}</span>
+            <span style="color:var(--text-muted);">Possible</span>
+        </div>
+        {% endif %}
+
+        {% if scan.cves and scan.cves.cves %}
+            {% set verified = scan.cves.cves | selectattr('confidence','equalto','high') | list %}
+            {% set possible = scan.cves.cves | selectattr('confidence','in',['medium','low']) | list %}
+
+            {% if verified %}
+            <div class="section-label" style="color:var(--accent-green);">
+                <i class="fas fa-check-circle"></i>Verified ({{ verified|length }})
+            </div>
+            <div class="table-responsive" style="margin-bottom:20px;">
+                <table class="table mb-0 cve-table" style="--bs-table-bg:transparent;">
+                    <thead><tr>
+                        <th>CVE ID</th><th>Technology</th><th>Severity</th><th>Score</th><th>Exploit</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for cve in verified %}
+                        <tr>
+                            <td><a href="{{ cve.url }}" target="_blank" class="cve-link">{{ cve.id }}</a></td>
+                            <td>
+                                <span style="font-size:12.5px; color:var(--text-secondary);">{{ cve.technology }}</span>
+                                {% if cve.version %}<span class="badge ms-1" style="font-size:10px; background:rgba(0,212,255,0.08); color:var(--accent-cyan); border:1px solid rgba(0,212,255,0.2);">{{ cve.version }}</span>{% endif %}
+                            </td>
+                            <td>
+                                {% set sev = cve.severity %}
+                                <span class="sev-badge sev-{{ sev if sev else 'NA' }}">{{ sev if sev else 'N/A' }}</span>
+                            </td>
+                            <td>
+                                {% if cve.score %}
+                                <span class="score-val" style="color:{% if cve.score >= 9 %}var(--accent-red){% elif cve.score >= 7 %}var(--accent-amber){% elif cve.score >= 4 %}var(--accent-cyan){% else %}var(--accent-green){% endif %};">{{ cve.score }}</span>
+                                {% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if cve.exploit_available %}
+                                    {% for exploit in cve.exploit_urls %}
+                                    <a href="{{ exploit.url }}" target="_blank" class="exploit-link" title="{{ exploit.title }}">
+                                        <i class="fas fa-fire"></i>Exploit
+                                    </a>
+                                    {% endfor %}
+                                {% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if possible %}
+            <div class="section-label" style="color:var(--accent-amber);">
+                <i class="fas fa-exclamation-triangle"></i>
+                Possible ({{ possible|length }})
+                <span style="font-size:10.5px; color:var(--text-muted); font-weight:400; text-transform:none; letter-spacing:0;">— keyword-matched, may include false positives</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table mb-0 cve-table" style="--bs-table-bg:transparent; opacity:0.8;">
+                    <thead><tr>
+                        <th>CVE ID</th><th>Technology</th><th>Severity</th><th>Score</th><th>Exploit</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for cve in possible[:30] %}
+                        <tr>
+                            <td><a href="{{ cve.url }}" target="_blank" class="cve-link-dim">{{ cve.id }}</a></td>
+                            <td><span style="font-size:12.5px; color:var(--text-muted);">{{ cve.technology }}</span></td>
+                            <td><span class="sev-badge sev-NA">{{ cve.severity }}</span></td>
+                            <td><span style="font-family:var(--font-mono); font-size:12px; color:var(--text-muted);">{{ cve.score if cve.score else '—' }}</span></td>
+                            <td>
+                                {% if cve.exploit_available %}
+                                    {% for exploit in cve.exploit_urls %}
+                                    <a href="{{ exploit.url }}" target="_blank" class="exploit-link" title="{{ exploit.title }}">
+                                        <i class="fas fa-fire"></i>Exploit
+                                    </a>
+                                    {% endfor %}
+                                {% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if possible|length > 30 %}
+                        <tr><td colspan="5" style="text-align:center; padding:10px !important;">
+                            <span style="font-size:12px; color:var(--text-muted);">Showing 30 of {{ possible|length }} possible CVEs</span>
+                        </td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+        {% else %}
+        <p style="font-size:13px; color:var(--text-muted); margin:0;">No CVEs found for this scan.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Exploits -->
+{% if scan.cves and scan.cves.cves %}
+{% set exploit_count = namespace(n=0) %}
+{% for c in scan.cves.cves %}
+    {% if c.exploit_available %}{% set exploit_count.n = exploit_count.n + 1 %}{% endif %}
+{% endfor %}
+{% if exploit_count.n > 0 %}
+<div class="section-panel" style="border-color:rgba(255,71,87,0.3);">
+    <div class="section-header" style="border-bottom-color:rgba(255,71,87,0.2);">
+        <h6 style="color:var(--accent-red);">
+            <i class="fas fa-fire" style="color:var(--accent-red);"></i>
+            {{ exploit_count.n }} Public Exploit{{ 's' if exploit_count.n > 1 else '' }} Found
+        </h6>
+        <span class="sev-badge sev-CRITICAL">Immediate Action</span>
+    </div>
+    <div class="section-body">
+        <div class="info-banner" style="border-left-color:var(--accent-red); border-color:rgba(255,71,87,0.2); background:rgba(255,71,87,0.04); margin-bottom:16px;">
+            <i class="fas fa-exclamation-triangle" style="color:var(--accent-red);"></i>
+            <div>The following CVEs have publicly available exploit code on Exploit-DB. Treat as highest priority for remediation.</div>
+        </div>
+        {% for cve in scan.cves.cves %}
+        {% if cve.exploit_available %}
+        <div class="exploit-item">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:5px;">
+                    <a href="{{ cve.url }}" target="_blank" style="font-family:var(--font-mono); font-size:13px; font-weight:600; color:var(--accent-red); text-decoration:none;">{{ cve.id }}</a>
+                    <span class="sev-badge sev-NA" style="font-size:10px;">{{ cve.technology }}</span>
+                    {% set sev = cve.severity %}
+                    <span class="sev-badge sev-{{ sev if sev else 'NA' }}">{{ sev }}{% if cve.score %} · {{ cve.score }}{% endif %}</span>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                    {% for exploit in cve.exploit_urls %}
+                    <a href="{{ exploit.url }}" target="_blank" class="exploit-link">
+                        <i class="fas fa-fire"></i>Exploit-DB
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% if cve.exploit_urls %}
+            <div style="font-size:11.5px; color:var(--text-muted); margin-top:8px;">
+                <i class="fas fa-code me-1"></i>{{ cve.exploit_urls[0].title }}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+<!-- Subdomains -->
+<div class="section-panel">
+    <div class="section-header">
+        <h6><i class="fas fa-sitemap" style="color:var(--accent-green);"></i>Subdomains</h6>
+        {% if scan.subdomains %}
+        <span style="font-size:11px; padding:1px 7px; border-radius:99px; background:rgba(0,229,160,0.07); color:var(--accent-green); border:1px solid rgba(0,229,160,0.2);">
+            {{ scan.subdomains.total_found }}
+        </span>
+        {% endif %}
+    </div>
+    <div class="section-body">
+        {% if scan.subdomains and scan.subdomains.subdomains %}
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            {% for sub in scan.subdomains.subdomains %}
+            <span class="sub-chip">{{ sub }}</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p style="font-size:13px; color:var(--text-muted); margin:0;">No subdomains found.</p>
+        {% endif %}
+    </div>
+</div>
+
 {% endblock %}
