@@ -278,9 +278,24 @@
 
         .mobile-toggle {
             display: none;
-            background: none; border: none;
-            color: var(--text-secondary); font-size: 16px; cursor: pointer;
+            width: 44px;
+            height: 44px;
+            min-width: 44px;
+            min-height: 44px;
+            background: var(--bg-raised);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            font-size: 16px;
+            cursor: pointer;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            user-select: none;
         }
+
 
         /* ─── PAGE WRAPPER ─── */
         .page-wrapper {
@@ -508,18 +523,33 @@
         @media (max-width: 768px) {
             .sidebar {
                 transform: translateX(-100%);
+                transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+                z-index: 200 !important;
+                will-change: transform;
             }
             .sidebar.open {
-                transform: translateX(0);
+                transform: translateX(0) !important;
+                box-shadow: 8px 0 40px rgba(0,0,0,0.7);
             }
             .main-content {
                 margin-left: 0;
             }
             .mobile-toggle {
-                display: block;
+                display: flex !important;
             }
             .page-wrapper {
                 padding: 16px;
+            }
+            .topbar {
+                position: sticky;
+                top: 0;
+                z-index: 150;
+            }
+        }
+        @media (max-width: 768px) {
+            #sidebarToggle:checked ~ aside {
+                transform: translateX(0) !important;
+                box-shadow: 8px 0 40px rgba(0,0,0,0.7);
             }
         }
     </style>
@@ -530,6 +560,8 @@
 
 {% if current_user.is_authenticated %}
 <div class="app-shell">
+    <!-- Hidden checkbox powers the mobile sidebar — no JS needed -->
+    <input type="checkbox" id="sidebarToggle" style="display:none;">
 
     <!-- ─── SIDEBAR ─── -->
     <aside class="sidebar" id="sidebar">
@@ -606,9 +638,9 @@
         <!-- Top Bar -->
         <header class="topbar">
             <div class="topbar-left">
-                <button class="mobile-toggle" id="mobileToggle" aria-label="Toggle menu">
+                <label for="sidebarToggle" class="mobile-toggle" aria-label="Toggle menu">
                     <i class="fas fa-bars"></i>
-                </button>
+                </label>
                 <span class="topbar-breadcrumb">
                     VulnWatch &rsaquo; <span>{% block breadcrumb %}Overview{% endblock %}</span>
                 </span>
@@ -677,37 +709,36 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 (function() {
-    var toggle  = document.getElementById('mobileToggle');
-    var sidebar = document.getElementById('sidebar');
-    if (!toggle || !sidebar) return;
+    function init() {
+        var cb      = document.getElementById('sidebarToggle');
+        var sidebar = document.getElementById('sidebar');
+        if (!cb || !sidebar) return;
 
-    /* Backdrop */
-    var backdrop = document.createElement('div');
-    backdrop.style.cssText = 'position:fixed;inset:0;z-index:99;background:rgba(0,0,0,0.55);display:none;-webkit-tap-highlight-color:transparent;';
-    document.body.appendChild(backdrop);
+        var bd = document.createElement('div');
+        bd.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:198;background:rgba(0,0,0,0.65);display:none;';
+        document.body.appendChild(bd);
 
-    function openSidebar() {
-        sidebar.classList.add('open');
-        backdrop.style.display = 'block';
-        document.body.style.overflow = 'hidden';
+        cb.addEventListener('change', function() {
+            bd.style.display = cb.checked ? 'block' : 'none';
+            document.body.style.overflow = cb.checked ? 'hidden' : '';
+        });
+
+        function closeMenu() {
+            cb.checked = false;
+            bd.style.display = 'none';
+            document.body.style.overflow = '';
+        }
+
+        bd.addEventListener('click', closeMenu);
+        bd.addEventListener('touchend', function(e){ e.preventDefault(); closeMenu(); }, {passive:false});
+        [].forEach.call(sidebar.querySelectorAll('a'), function(a) {
+            a.addEventListener('click', function() { setTimeout(closeMenu, 80); });
+        });
     }
 
-    function closeSidebar() {
-        sidebar.classList.remove('open');
-        backdrop.style.display = 'none';
-        document.body.style.overflow = '';
-    }
-
-    toggle.addEventListener('click', function(e) {
-        e.stopPropagation();
-        sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
-    });
-
-    backdrop.addEventListener('click', closeSidebar);
-
-    sidebar.querySelectorAll('a.sidebar-link').forEach(function(link) {
-        link.addEventListener('click', closeSidebar);
-    });
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else { init(); }
 })();
 </script>
 {% block extra_js %}{% endblock %}
