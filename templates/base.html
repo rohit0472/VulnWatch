@@ -654,36 +654,61 @@
 
 {% else %}
     <!-- Unauthenticated: plain wrapper for auth pages -->
-    <div class="page-wrapper" style="margin:0; max-width:100%;">
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                <div class="alert alert-{{ category }} alert-dismissible fade show mb-3">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-
-        {{ self.content() }}
-
-    </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div style="position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:9999; min-width:320px; max-width:480px;">
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show mb-2" role="alert">
+                {% if category == 'danger' %}<i class="fas fa-exclamation-circle me-2"></i>
+                {% elif category == 'success' %}<i class="fas fa-check-circle me-2"></i>
+                {% elif category == 'info' %}<i class="fas fa-info-circle me-2"></i>
+                {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle me-2"></i>
+                {% endif %}
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    {% endwith %}
+    {{- self.content() -}}
 {% endif %}
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    const toggle = document.getElementById('mobileToggle');
-    const sidebar = document.getElementById('sidebar');
-    if (toggle && sidebar) {
-        toggle.addEventListener('click', () => sidebar.classList.toggle('open'));
-        document.addEventListener('click', (e) => {
-            if (!sidebar.contains(e.target) && !toggle.contains(e.target)) {
-                sidebar.classList.remove('open');
-            }
-        });
+(function() {
+    var toggle  = document.getElementById('mobileToggle');
+    var sidebar = document.getElementById('sidebar');
+    if (!toggle || !sidebar) return;
+
+    /* Backdrop */
+    var backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed;inset:0;z-index:99;background:rgba(0,0,0,0.55);display:none;-webkit-tap-highlight-color:transparent;';
+    document.body.appendChild(backdrop);
+
+    function openSidebar() {
+        sidebar.classList.add('open');
+        backdrop.style.display = 'block';
+        document.body.style.overflow = 'hidden';
     }
+
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        backdrop.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    toggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+    });
+
+    backdrop.addEventListener('click', closeSidebar);
+
+    sidebar.querySelectorAll('a.sidebar-link').forEach(function(link) {
+        link.addEventListener('click', closeSidebar);
+    });
+})();
 </script>
 {% block extra_js %}{% endblock %}
 </body>
